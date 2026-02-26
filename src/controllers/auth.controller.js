@@ -1,79 +1,73 @@
-const pool = require("../db/connect");
-const bcrypt = require("bcrypt");
+const { v4: uuidv4 } = require("uuid");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const UserModel = require("../models/user.model");
 
-// REGISTER LOCAL
+// REGISTER
 exports.register = async (req, res) => {
   try {
-    const { username, email, phone, password } = req.body;
+    const { username, email, password } = req.body;
 
-    // check trùng email
-    if (email) {
-      const check = await pool.query(
-        "SELECT * FROM users WHERE email=$1",
-        [email]
-      );
-      if (check.rows.length)
-        return res.status(400).json({ msg: "Email already exists" });
+    if ((!username && !email) || !password) {
+      return res.status(400).json({ message: "Thiếu thông tin" });
     }
 
-    const hash = await bcrypt.hash(password, 10);
+    const existing = await UserModel.findByEmailOrUsername(username, email);
+    if (existing) {
+      return res.status(400).json({ message: "User đã tồn tại" });
+    }
 
-    const user = await pool.query(
-      `INSERT INTO users(username,email,phone,password,auth_provider)
-       VALUES($1,$2,$3,$4,'local') RETURNING *`,
-      [username, email, phone, hash]
-    );
+    const userId = uuidv4();
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    res.json(user.rows[0]);
-  } catch (err) {
-    console.log(err);
-    res.status(500).json(err);
+    await UserModel.createUser({ userId, username, email, hashedPassword });
+
+    return res.status(201).json({ message: "Đăng ký thành công" });
+  } catch (error) {
+    console.error("REGISTER ERROR:", error);
+    return res.status(500).json({ message: "Lỗi server" });
   }
 };
 
-// LOGIN LOCAL
-console.log(req.body);
+// LOGIN
 exports.login = async (req, res) => {
   try {
-    const { email, username, password } = req.body;
+    const { username, email, password } = req.body;
 
-    if (!password || (!email && !username)) {
-      return res
-        .status(400)
-        .json({ message: "Thiếu username/email hoặc password" });
+    if ((!username && !email) || !password) {
+      return res.status(400).json({ message: "Thiếu thông tin" });
     }
 
-    let user;
+    const user = await UserModel.findByEmailOrUsername(username, email);
 
-    if (email) {
-      user = await pool.query(
-        "SELECT * FROM users WHERE email=$1",
-        [email]
-      );
-    } else {
-      user = await pool.query(
-        "SELECT * FROM users WHERE username=$1",
-        [username]
-      );
+    if (!user) {
+      return res.status(400).json({ message: "User không tồn tại" });
     }
 
-    if (!user.rows.length)
-      return res.status(400).json({ message: "User not found" });
+    if (!user.is_active) {
+      return res.status(403).json({ message: "Tài khoản đã bị khóa" });
+    }
 
-    const valid = await bcrypt.compare(password, user.rows[0].password);
-    if (!valid)
-      return res.status(400).json({ message: "Wrong password" });
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Sai mật khẩu" });
+    }
+
+    await UserModel.updateLastLogin(user.user_id);
 
     const token = jwt.sign(
-      { id: user.rows[0].id },
+      {
+        user_id: user.user_id,
+        username: user.username,
+        email: user.email,
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "1d" },
     );
 
-    res.json({ token, user: user.rows[0] });
-  } catch (err) {
-    console.log(err);
-    res.status(500).json(err);
+    return res.json({ message: "Đăng nhập thành công", token });
+  } catch (error) {
+    console.error("LOGIN ERROR:", error);
+    return res.status(500).json({ message: "Lỗi server" });
   }
 };
