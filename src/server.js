@@ -1,25 +1,18 @@
-const express = require("express");
-const cors = require("cors");
-require("dotenv").config();
+const app = require("./app");
+const pool = require("./db/connect");
 
-// tạo app trước
-const app = express();
-
-// middleware
-app.use(cors());
-app.use(express.json());
-
-// routes
-const authRoutes = require("./routes/auth");
-app.use("/api/auth", authRoutes);
-
-// test route
-app.get("/", (req, res) => {
-  res.send("Backend OK");
-});
+// kết nối database
+pool
+  .query("SELECT NOW()")
+  .then((res) => {
+    console.log("DB connected:", res.rows[0]);
+  })
+  .catch((err) => {
+    console.error("DB connection error:", err);
+  });
 
 // chạy server
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server chạy tại port ${PORT}`);
 });
