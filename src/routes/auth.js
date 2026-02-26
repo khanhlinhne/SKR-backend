@@ -3,7 +3,9 @@ const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { v4: uuidv4 } = require("uuid");
+const passport = require("passport");
 const pool = require("../db/connect");
+const UserModel = require("../models/user.model");
 
 /*
 =========================================
@@ -31,33 +33,7 @@ router.post("/register", async (req, res) => {
     const userId = uuidv4();
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await pool.query(
-      `INSERT INTO mst_users (
-        user_id,
-        username,
-        email,
-        password_hash,
-        timezone_offset,
-        is_active,
-        email_verified,
-        created_by,
-        created_at_utc,
-        updated_by,
-        updated_at_utc
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),$9,NOW())`,
-      [
-        userId,
-        username,
-        email,
-        hashedPassword,
-        0, // timezone_offset
-        true, // is_active
-        false, // email_verified
-        userId, // created_by (self)
-        userId, // updated_by
-      ],
-    );
+    await UserModel.createUser({ userId, username, email, hashedPassword });
 
     res.status(201).json({
       message: "Đăng ký thành công",
@@ -96,6 +72,14 @@ router.post("/login", async (req, res) => {
       return res.status(403).json({ message: "Tài khoản đã bị khóa" });
     }
 
+    // Nếu user chỉ đăng ký bằng Google (không có password)
+    if (!user.password_hash) {
+      return res.status(400).json({
+        message:
+          "Tài khoản này đăng ký bằng Google. Vui lòng đăng nhập bằng Google.",
+      });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password_hash);
 
     if (!isMatch) {
@@ -127,5 +111,57 @@ router.post("/login", async (req, res) => {
     res.status(500).json({ message: "Lỗi server" });
   }
 });
+
+/*
+=========================================
+GOOGLE OAUTH — Bước 1: Redirect tới Google
+=========================================
+*/
+router.get(
+  "/google",
+  passport.authenticate("google", {
+    scope: ["profile", "email"],
+    session: false,
+  }),
+);
+
+/*
+=========================================
+GOOGLE OAUTH — Bước 2: Google callback
+=========================================
+*/
+router.get(
+  "/google/callback",
+  passport.authenticate("google", {
+    session: false,
+    failureRedirect: `${process.env.FRONTEND_URL}/login?error=google_failed`,
+  }),
+  async (req, res) => {
+    try {
+      const user = req.user;
+
+      // Cập nhật last login
+      await UserModel.updateLastLogin(user.user_id);
+
+      // Tạo JWT token giống login thường
+      const token = jwt.sign(
+        {
+          user_id: user.user_id,
+          username: user.username,
+          email: user.email,
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: "1d" },
+      );
+
+      // Redirect về frontend kèm token trong query string
+      // Frontend sẽ lấy token từ URL và lưu vào localStorage
+      res.redirect(`${process.env.FRONTEND_URL}/auth/google/callback?token=${token}`);
+    } catch (error) {
+      console.error("GOOGLE CALLBACK ERROR:", error);
+      res.redirect(`${process.env.FRONTEND_URL}/login?error=server_error`);
+    }
+  },
+);
 
 module.exports = router;
