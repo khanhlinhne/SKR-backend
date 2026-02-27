@@ -1,0 +1,1275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model adm_system_logs {
+  log_id               String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  log_level            String     @db.VarChar(20)
+  log_category         String     @db.VarChar(100)
+  log_message          String
+  user_id              String?    @db.Uuid
+  session_id           String?    @db.VarChar(255)
+  ip_address           String?    @db.Inet
+  user_agent           String?
+  request_method       String?    @db.VarChar(10)
+  request_url          String?
+  request_params       Json?
+  request_body         Json?
+  response_status_code Int?
+  response_time_ms     Int?
+  error_code           String?    @db.VarChar(100)
+  error_message        String?
+  error_stack_trace    String?
+  metadata             Json?
+  logged_at_utc        DateTime   @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  created_by           String     @db.Uuid
+  created_at_utc       DateTime   @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by           String?    @db.Uuid
+  updated_at_utc       DateTime?  @db.Timestamp(6)
+  status               String?    @default("logged") @db.VarChar(50)
+  mst_users            mst_users? @relation(fields: [user_id], references: [user_id], onUpdate: NoAction, map: "fk_system_logs_user")
+
+  @@index([log_category], map: "idx_system_logs_category")
+  @@index([log_level], map: "idx_system_logs_level")
+  @@index([logged_at_utc(sort: Desc)], map: "idx_system_logs_logged_at")
+  @@index([user_id], map: "idx_system_logs_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model ai_explanations {
+  explanation_id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  question_id                 String        @db.Uuid
+  user_id                     String?       @db.Uuid
+  question_text               String
+  user_answer                 String?
+  correct_answer              String?
+  explanation_text            String
+  explanation_steps           Json?
+  related_concepts            Json?
+  additional_resources        Json?
+  ai_model                    String?       @db.VarChar(100)
+  ai_provider                 String?       @db.VarChar(50)
+  prompt_tokens               Int?
+  completion_tokens           Int?
+  total_cost                  Decimal?      @db.Decimal(10, 4)
+  processing_duration_seconds Int?
+  created_by                  String        @db.Uuid
+  created_at_utc              DateTime      @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                  String?       @db.Uuid
+  updated_at_utc              DateTime?     @db.Timestamp(6)
+  status                      String?       @default("active") @db.VarChar(50)
+  cnt_questions               cnt_questions @relation(fields: [question_id], references: [question_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ai_explanations_question")
+  mst_users                   mst_users?    @relation(fields: [user_id], references: [user_id], onUpdate: NoAction, map: "fk_ai_explanations_user")
+
+  @@index([created_at_utc(sort: Desc)], map: "idx_ai_explanations_created_at")
+  @@index([question_id], map: "idx_ai_explanations_question")
+  @@index([user_id], map: "idx_ai_explanations_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model ai_question_generations {
+  generation_id               String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                     String                @db.Uuid
+  source_type                 String                @db.VarChar(50)
+  source_content              String?
+  source_document_id          String?               @db.Uuid
+  source_file_url             String?
+  question_type               question_type?
+  difficulty_level            difficulty_level?
+  quantity_requested          Int
+  quantity_generated          Int?                  @default(0)
+  subject_id                  String?               @db.Uuid
+  topic_keywords              Json?
+  language_code               String?               @default("en") @db.VarChar(10)
+  ai_model                    String?               @db.VarChar(100)
+  ai_provider                 String?               @db.VarChar(50)
+  prompt_tokens               Int?
+  completion_tokens           Int?
+  total_cost                  Decimal?              @db.Decimal(10, 4)
+  generated_questions         Json?
+  quality_score               Decimal?              @db.Decimal(3, 2)
+  processing_started_at_utc   DateTime?             @db.Timestamp(6)
+  processing_completed_at_utc DateTime?             @db.Timestamp(6)
+  processing_duration_seconds Int?
+  error_message               String?
+  user_reviewed               Boolean?              @default(false)
+  user_accepted_count         Int?                  @default(0)
+  user_rejected_count         Int?                  @default(0)
+  created_by                  String                @db.Uuid
+  created_at_utc              DateTime              @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                  String?               @db.Uuid
+  updated_at_utc              DateTime?             @db.Timestamp(6)
+  status                      ai_generation_status? @default(queued)
+  cnt_documents               cnt_documents?        @relation(fields: [source_document_id], references: [document_id], onUpdate: NoAction, map: "fk_ai_generations_document")
+  mst_subjects                mst_subjects?         @relation(fields: [subject_id], references: [subject_id], onUpdate: NoAction, map: "fk_ai_generations_subject")
+  mst_users                   mst_users             @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ai_generations_user")
+
+  @@index([created_at_utc(sort: Desc)], map: "idx_ai_generations_created_at")
+  @@index([status], map: "idx_ai_generations_status")
+  @@index([subject_id], map: "idx_ai_generations_subject")
+  @@index([user_id], map: "idx_ai_generations_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model audit_logs {
+  audit_id       String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  table_name     String   @db.VarChar(100)
+  record_id      String   @db.Uuid
+  action         String   @db.VarChar(20)
+  old_data       Json?
+  new_data       Json?
+  changed_fields Json?
+  changed_by     String   @db.Uuid
+  changed_at_utc DateTime @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  ip_address     String?  @db.Inet
+  user_agent     String?
+  session_id     String?  @db.VarChar(255)
+  change_reason  String?
+  metadata       Json?
+
+  @@index([action], map: "idx_audit_logs_action")
+  @@index([changed_at_utc(sort: Desc)], map: "idx_audit_logs_changed_at")
+  @@index([changed_by], map: "idx_audit_logs_changed_by")
+  @@index([table_name, record_id], map: "idx_audit_logs_table_record")
+}
+
+model cnt_documents {
+  document_id             String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  document_title          String                    @db.VarChar(255)
+  document_description    String?
+  file_name               String                    @db.VarChar(255)
+  file_url                String
+  file_type               String?                   @db.VarChar(50)
+  file_size_bytes         BigInt?
+  page_count              Int?
+  uploader_id             String                    @db.Uuid
+  lesson_id               String?                   @db.Uuid
+  subject_id              String?                   @db.Uuid
+  visibility              content_visibility?       @default(private)
+  tags                    Json?
+  download_count          Int?                      @default(0)
+  view_count              Int?                      @default(0)
+  created_by              String                    @db.Uuid
+  created_at_utc          DateTime                  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by              String?                   @db.Uuid
+  updated_at_utc          DateTime?                 @db.Timestamp(6)
+  status                  String?                   @default("processing") @db.VarChar(50)
+  ai_question_generations ai_question_generations[]
+  mst_lessons             mst_lessons?              @relation(fields: [lesson_id], references: [lesson_id], onUpdate: NoAction, map: "fk_documents_lesson")
+  mst_subjects            mst_subjects?             @relation(fields: [subject_id], references: [subject_id], onUpdate: NoAction, map: "fk_documents_subject")
+  mst_users               mst_users                 @relation(fields: [uploader_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_documents_uploader")
+
+  @@index([created_at_utc(sort: Desc)], map: "idx_documents_created_at")
+  @@index([lesson_id], map: "idx_documents_lesson")
+  @@index([subject_id], map: "idx_documents_subject")
+  @@index([file_type], map: "idx_documents_type")
+  @@index([uploader_id], map: "idx_documents_uploader")
+  @@index([visibility], map: "idx_documents_visibility")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model cnt_flashcard_items {
+  flashcard_item_id     String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  flashcard_set_id      String                  @db.Uuid
+  front_text            String
+  back_text             String
+  front_image_url       String?
+  back_image_url        String?
+  card_order            Int
+  hint_text             String?
+  ease_factor           Decimal?                @default(2.50) @db.Decimal(4, 2)
+  interval_days         Int?                    @default(0)
+  created_by            String                  @db.Uuid
+  created_at_utc        DateTime                @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by            String?                 @db.Uuid
+  updated_at_utc        DateTime?               @db.Timestamp(6)
+  status                String?                 @default("active") @db.VarChar(50)
+  cnt_flashcards        cnt_flashcards          @relation(fields: [flashcard_set_id], references: [flashcard_set_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_flashcard_items_set")
+  lrn_flashcard_reviews lrn_flashcard_reviews[]
+
+  @@index([card_order], map: "idx_flashcard_items_order")
+  @@index([flashcard_set_id], map: "idx_flashcard_items_set")
+}
+
+model cnt_flashcards {
+  flashcard_set_id       String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  set_title              String                   @db.VarChar(255)
+  set_description        String?
+  set_cover_image_url    String?
+  creator_id             String                   @db.Uuid
+  lesson_id              String?                  @db.Uuid
+  subject_id             String?                  @db.Uuid
+  visibility             content_visibility?      @default(private)
+  tags                   Json?
+  total_cards            Int?                     @default(0)
+  times_studied          Int?                     @default(0)
+  average_rating         Decimal?                 @db.Decimal(3, 2)
+  created_by             String                   @db.Uuid
+  created_at_utc         DateTime                 @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by             String?                  @db.Uuid
+  updated_at_utc         DateTime?                @db.Timestamp(6)
+  status                 String?                  @default("draft") @db.VarChar(50)
+  cnt_flashcard_items    cnt_flashcard_items[]
+  mst_users              mst_users                @relation(fields: [creator_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_flashcards_creator")
+  mst_lessons            mst_lessons?             @relation(fields: [lesson_id], references: [lesson_id], onUpdate: NoAction, map: "fk_flashcards_lesson")
+  mst_subjects           mst_subjects?            @relation(fields: [subject_id], references: [subject_id], onUpdate: NoAction, map: "fk_flashcards_subject")
+  lrn_flashcard_sessions lrn_flashcard_sessions[]
+
+  @@index([created_at_utc(sort: Desc)], map: "idx_flashcards_created_at")
+  @@index([creator_id], map: "idx_flashcards_creator")
+  @@index([lesson_id], map: "idx_flashcards_lesson")
+  @@index([status], map: "idx_flashcards_status")
+  @@index([subject_id], map: "idx_flashcards_subject")
+  @@index([visibility], map: "idx_flashcards_visibility")
+}
+
+model cnt_question_banks {
+  question_bank_id String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  bank_title       String              @db.VarChar(255)
+  bank_description String?
+  creator_id       String              @db.Uuid
+  subject_id       String?             @db.Uuid
+  total_questions  Int?                @default(0)
+  visibility       content_visibility? @default(private)
+  tags             Json?
+  created_by       String              @db.Uuid
+  created_at_utc   DateTime            @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by       String?             @db.Uuid
+  updated_at_utc   DateTime?           @db.Timestamp(6)
+  status           String?             @default("active") @db.VarChar(50)
+  mst_users        mst_users           @relation(fields: [creator_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_question_banks_creator")
+  mst_subjects     mst_subjects?       @relation(fields: [subject_id], references: [subject_id], onUpdate: NoAction, map: "fk_question_banks_subject")
+
+  @@index([creator_id], map: "idx_question_banks_creator")
+  @@index([status], map: "idx_question_banks_status")
+  @@index([subject_id], map: "idx_question_banks_subject")
+}
+
+model cnt_question_options {
+  option_id          String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  question_id        String        @db.Uuid
+  option_text        String
+  option_order       Int
+  is_correct         Boolean?      @default(false)
+  option_explanation String?
+  option_image_url   String?
+  created_by         String        @db.Uuid
+  created_at_utc     DateTime      @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by         String?       @db.Uuid
+  updated_at_utc     DateTime?     @db.Timestamp(6)
+  status             String?       @default("active") @db.VarChar(50)
+  cnt_questions      cnt_questions @relation(fields: [question_id], references: [question_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_question_options_question")
+
+  @@index([question_id], map: "idx_question_options_question")
+}
+
+model cnt_questions {
+  question_id          String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  question_type        question_type
+  question_text        String
+  question_explanation String?
+  difficulty_level     difficulty_level?      @default(medium)
+  points               Decimal?               @default(1.00) @db.Decimal(5, 2)
+  time_limit_seconds   Int?
+  question_image_url   String?
+  question_attachments Json?
+  creator_id           String                 @db.Uuid
+  lesson_id            String?                @db.Uuid
+  subject_id           String?                @db.Uuid
+  visibility           content_visibility?    @default(private)
+  tags                 Json?
+  times_used           Int?                   @default(0)
+  average_score        Decimal?               @db.Decimal(5, 2)
+  success_rate         Decimal?               @db.Decimal(5, 2)
+  created_by           String                 @db.Uuid
+  created_at_utc       DateTime               @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by           String?                @db.Uuid
+  updated_at_utc       DateTime?              @db.Timestamp(6)
+  status               String?                @default("draft") @db.VarChar(50)
+  ai_explanations      ai_explanations[]
+  cnt_question_options cnt_question_options[]
+  mst_users            mst_users              @relation(fields: [creator_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_questions_creator")
+  mst_lessons          mst_lessons?           @relation(fields: [lesson_id], references: [lesson_id], onUpdate: NoAction, map: "fk_questions_lesson")
+  mst_subjects         mst_subjects?          @relation(fields: [subject_id], references: [subject_id], onUpdate: NoAction, map: "fk_questions_subject")
+  lrn_quiz_answers     lrn_quiz_answers[]
+
+  @@index([created_at_utc(sort: Desc)], map: "idx_questions_created_at")
+  @@index([creator_id], map: "idx_questions_creator")
+  @@index([difficulty_level], map: "idx_questions_difficulty")
+  @@index([lesson_id], map: "idx_questions_lesson")
+  @@index([status], map: "idx_questions_status")
+  @@index([subject_id], map: "idx_questions_subject")
+  @@index([tags], map: "idx_questions_tags", type: Gin)
+  @@index([question_type], map: "idx_questions_type")
+  @@index([visibility], map: "idx_questions_visibility")
+}
+
+model cnt_videos {
+  video_id                 String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  video_title              String               @db.VarChar(255)
+  video_description        String?
+  video_thumbnail_url      String?
+  video_url                String
+  video_duration_seconds   Int?
+  video_format             String?              @db.VarChar(20)
+  video_resolution         String?              @db.VarChar(20)
+  file_size_bytes          BigInt?
+  uploader_id              String               @db.Uuid
+  lesson_id                String?              @db.Uuid
+  subject_id               String?              @db.Uuid
+  visibility               content_visibility?  @default(private)
+  tags                     Json?
+  has_subtitles            Boolean?             @default(false)
+  subtitle_languages       Json?
+  view_count               Int?                 @default(0)
+  average_watch_percentage Decimal?             @db.Decimal(5, 2)
+  created_by               String               @db.Uuid
+  created_at_utc           DateTime             @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by               String?              @db.Uuid
+  updated_at_utc           DateTime?            @db.Timestamp(6)
+  status                   String?              @default("processing") @db.VarChar(50)
+  mst_lessons              mst_lessons?         @relation(fields: [lesson_id], references: [lesson_id], onUpdate: NoAction, map: "fk_videos_lesson")
+  mst_subjects             mst_subjects?        @relation(fields: [subject_id], references: [subject_id], onUpdate: NoAction, map: "fk_videos_subject")
+  mst_users                mst_users            @relation(fields: [uploader_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_videos_uploader")
+  lrn_video_progress       lrn_video_progress[]
+
+  @@index([created_at_utc(sort: Desc)], map: "idx_videos_created_at")
+  @@index([lesson_id], map: "idx_videos_lesson")
+  @@index([status], map: "idx_videos_status")
+  @@index([subject_id], map: "idx_videos_subject")
+  @@index([uploader_id], map: "idx_videos_uploader")
+  @@index([visibility], map: "idx_videos_visibility")
+}
+
+model lrn_bookmarks {
+  bookmark_id       String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id           String    @db.Uuid
+  content_type      String    @db.VarChar(50)
+  content_id        String    @db.Uuid
+  bookmark_note     String?
+  bookmark_tags     Json?
+  page_number       Int?
+  timestamp_seconds Int?
+  created_by        String    @db.Uuid
+  created_at_utc    DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by        String?   @db.Uuid
+  updated_at_utc    DateTime? @db.Timestamp(6)
+  status            String?   @default("active") @db.VarChar(50)
+  mst_users         mst_users @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_bookmarks_user")
+
+  @@unique([user_id, content_type, content_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model lrn_flashcard_reviews {
+  review_id              String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  session_id             String                 @db.Uuid
+  user_id                String                 @db.Uuid
+  flashcard_item_id      String                 @db.Uuid
+  user_rating            Int?
+  was_correct            Boolean?
+  time_to_answer_seconds Int?
+  previous_ease_factor   Decimal?               @db.Decimal(4, 2)
+  new_ease_factor        Decimal?               @db.Decimal(4, 2)
+  previous_interval_days Int?
+  new_interval_days      Int?
+  next_review_at_utc     DateTime?              @db.Timestamp(6)
+  created_by             String                 @db.Uuid
+  created_at_utc         DateTime               @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by             String?                @db.Uuid
+  updated_at_utc         DateTime?              @db.Timestamp(6)
+  status                 String?                @default("completed") @db.VarChar(50)
+  cnt_flashcard_items    cnt_flashcard_items    @relation(fields: [flashcard_item_id], references: [flashcard_item_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_flashcard_reviews_item")
+  lrn_flashcard_sessions lrn_flashcard_sessions @relation(fields: [session_id], references: [session_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_flashcard_reviews_session")
+  mst_users              mst_users              @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_flashcard_reviews_user")
+
+  @@index([flashcard_item_id], map: "idx_flashcard_reviews_item")
+  @@index([next_review_at_utc], map: "idx_flashcard_reviews_next_review")
+  @@index([session_id], map: "idx_flashcard_reviews_session")
+  @@index([user_id], map: "idx_flashcard_reviews_user")
+}
+
+model lrn_flashcard_sessions {
+  session_id               String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                  String                  @db.Uuid
+  flashcard_set_id         String                  @db.Uuid
+  total_cards              Int
+  cards_reviewed           Int?                    @default(0)
+  cards_mastered           Int?                    @default(0)
+  cards_learning           Int?                    @default(0)
+  cards_new                Int?                    @default(0)
+  started_at_utc           DateTime                @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  ended_at_utc             DateTime?               @db.Timestamp(6)
+  session_duration_seconds Int?
+  created_by               String                  @db.Uuid
+  created_at_utc           DateTime                @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by               String?                 @db.Uuid
+  updated_at_utc           DateTime?               @db.Timestamp(6)
+  status                   session_status?         @default(started)
+  lrn_flashcard_reviews    lrn_flashcard_reviews[]
+  cnt_flashcards           cnt_flashcards          @relation(fields: [flashcard_set_id], references: [flashcard_set_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_flashcard_sessions_set")
+  mst_users                mst_users               @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_flashcard_sessions_user")
+
+  @@index([created_at_utc(sort: Desc)], map: "idx_flashcard_sessions_created_at")
+  @@index([flashcard_set_id], map: "idx_flashcard_sessions_set")
+  @@index([status], map: "idx_flashcard_sessions_status")
+  @@index([user_id], map: "idx_flashcard_sessions_user")
+}
+
+model lrn_learning_streaks {
+  streak_id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id             String    @unique @db.Uuid
+  current_streak_days Int?      @default(0)
+  longest_streak_days Int?      @default(0)
+  last_activity_date  DateTime? @db.Date
+  streak_started_date DateTime? @db.Date
+  total_study_days    Int?      @default(0)
+  total_study_hours   Decimal?  @default(0.00) @db.Decimal(10, 2)
+  milestones_achieved Json?
+  created_by          String    @db.Uuid
+  created_at_utc      DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by          String?   @db.Uuid
+  updated_at_utc      DateTime? @db.Timestamp(6)
+  status              String?   @default("active") @db.VarChar(50)
+  mst_users           mst_users @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_learning_streaks_user")
+
+  @@index([last_activity_date(sort: Desc)], map: "idx_learning_streaks_date")
+  @@index([user_id], map: "idx_learning_streaks_user")
+}
+
+model lrn_practice_tests {
+  practice_test_id     String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id              String                 @db.Uuid
+  test_title           String                 @db.VarChar(255)
+  test_description     String?
+  subject_ids          Json?
+  difficulty_levels    Json?
+  question_types       Json?
+  total_questions      Int
+  time_limit_minutes   Int?
+  randomize_questions  Boolean?               @default(true)
+  randomize_options    Boolean?               @default(true)
+  show_correct_answers Boolean?               @default(true)
+  attempts_count       Int?                   @default(0)
+  best_score           Decimal?               @db.Decimal(5, 2)
+  average_score        Decimal?               @db.Decimal(5, 2)
+  last_attempt_at_utc  DateTime?              @db.Timestamp(6)
+  created_by           String                 @db.Uuid
+  created_at_utc       DateTime               @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by           String?                @db.Uuid
+  updated_at_utc       DateTime?              @db.Timestamp(6)
+  status               String?                @default("active") @db.VarChar(50)
+  mst_users            mst_users              @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_practice_tests_user")
+  lrn_test_submissions lrn_test_submissions[]
+}
+
+model lrn_quiz_answers {
+  answer_id           String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  attempt_id          String            @db.Uuid
+  question_id         String            @db.Uuid
+  user_id             String            @db.Uuid
+  answer_text         String?
+  selected_option_ids Json?
+  answer_attachments  Json?
+  is_correct          Boolean?
+  points_earned       Decimal?          @db.Decimal(5, 2)
+  points_possible     Decimal?          @db.Decimal(5, 2)
+  time_spent_seconds  Int?
+  answered_at_utc     DateTime?         @db.Timestamp(6)
+  created_by          String            @db.Uuid
+  created_at_utc      DateTime          @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by          String?           @db.Uuid
+  updated_at_utc      DateTime?         @db.Timestamp(6)
+  status              String?           @default("submitted") @db.VarChar(50)
+  lrn_quiz_attempts   lrn_quiz_attempts @relation(fields: [attempt_id], references: [attempt_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_quiz_answers_attempt")
+  cnt_questions       cnt_questions     @relation(fields: [question_id], references: [question_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_quiz_answers_question")
+  mst_users           mst_users         @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_quiz_answers_user")
+
+  @@index([attempt_id], map: "idx_quiz_answers_attempt")
+  @@index([is_correct], map: "idx_quiz_answers_correct")
+  @@index([question_id], map: "idx_quiz_answers_question")
+  @@index([user_id], map: "idx_quiz_answers_user")
+}
+
+model lrn_quiz_attempts {
+  attempt_id           String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id              String                 @db.Uuid
+  quiz_title           String?                @db.VarChar(255)
+  quiz_type            String?                @db.VarChar(50)
+  total_questions      Int
+  time_limit_seconds   Int?
+  passing_score        Decimal?               @db.Decimal(5, 2)
+  questions_answered   Int?                   @default(0)
+  correct_answers      Int?                   @default(0)
+  score_achieved       Decimal?               @db.Decimal(5, 2)
+  percentage_score     Decimal?               @db.Decimal(5, 2)
+  is_passed            Boolean?
+  started_at_utc       DateTime               @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  submitted_at_utc     DateTime?              @db.Timestamp(6)
+  time_spent_seconds   Int?
+  created_by           String                 @db.Uuid
+  created_at_utc       DateTime               @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by           String?                @db.Uuid
+  updated_at_utc       DateTime?              @db.Timestamp(6)
+  status               test_status?           @default(in_progress)
+  lrn_quiz_answers     lrn_quiz_answers[]
+  mst_users            mst_users              @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_quiz_attempts_user")
+  lrn_test_submissions lrn_test_submissions[]
+
+  @@index([created_at_utc(sort: Desc)], map: "idx_quiz_attempts_created_at")
+  @@index([status], map: "idx_quiz_attempts_status")
+  @@index([user_id], map: "idx_quiz_attempts_user")
+  @@index([user_id, created_at_utc(sort: Desc)], map: "idx_quiz_attempts_user_date")
+}
+
+model lrn_study_sessions {
+  study_session_id       String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                String    @db.Uuid
+  session_date           DateTime  @db.Date
+  study_duration_minutes Int?      @default(0)
+  activities_completed   Int?      @default(0)
+  quiz_attempts          Int?      @default(0)
+  flashcards_reviewed    Int?      @default(0)
+  videos_watched         Int?      @default(0)
+  documents_read         Int?      @default(0)
+  total_points_earned    Decimal?  @default(0.00) @db.Decimal(10, 2)
+  average_accuracy       Decimal?  @db.Decimal(5, 2)
+  session_start_utc      DateTime  @db.Timestamp(6)
+  session_end_utc        DateTime? @db.Timestamp(6)
+  created_by             String    @db.Uuid
+  created_at_utc         DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by             String?   @db.Uuid
+  updated_at_utc         DateTime? @db.Timestamp(6)
+  status                 String?   @default("active") @db.VarChar(50)
+  mst_users              mst_users @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_study_sessions_user")
+
+  @@index([session_date(sort: Desc)], map: "idx_study_sessions_date")
+  @@index([user_id], map: "idx_study_sessions_user")
+  @@index([user_id, session_date(sort: Desc)], map: "idx_study_sessions_user_date")
+}
+
+model lrn_test_submissions {
+  submission_id                                               String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  practice_test_id                                            String?             @db.Uuid
+  user_id                                                     String              @db.Uuid
+  attempt_id                                                  String              @db.Uuid
+  submission_notes                                            String?
+  flagged_questions                                           Json?
+  auto_graded_at_utc                                          DateTime?           @db.Timestamp(6)
+  manually_graded_at_utc                                      DateTime?           @db.Timestamp(6)
+  graded_by_user_id                                           String?             @db.Uuid
+  grading_notes                                               String?
+  created_by                                                  String              @db.Uuid
+  created_at_utc                                              DateTime            @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                                                  String?             @db.Uuid
+  updated_at_utc                                              DateTime?           @db.Timestamp(6)
+  status                                                      String?             @default("submitted") @db.VarChar(50)
+  lrn_quiz_attempts                                           lrn_quiz_attempts   @relation(fields: [attempt_id], references: [attempt_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_test_submissions_attempt")
+  mst_users_lrn_test_submissions_graded_by_user_idTomst_users mst_users?          @relation("lrn_test_submissions_graded_by_user_idTomst_users", fields: [graded_by_user_id], references: [user_id], onUpdate: NoAction, map: "fk_test_submissions_graded_by")
+  lrn_practice_tests                                          lrn_practice_tests? @relation(fields: [practice_test_id], references: [practice_test_id], onUpdate: NoAction, map: "fk_test_submissions_practice_test")
+  mst_users_lrn_test_submissions_user_idTomst_users           mst_users           @relation("lrn_test_submissions_user_idTomst_users", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_test_submissions_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model lrn_video_progress {
+  progress_id              String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                  String     @db.Uuid
+  video_id                 String     @db.Uuid
+  watch_duration_seconds   Int?       @default(0)
+  current_position_seconds Int?       @default(0)
+  total_duration_seconds   Int
+  completion_percentage    Decimal?   @default(0.00) @db.Decimal(5, 2)
+  is_completed             Boolean?   @default(false)
+  completed_at_utc         DateTime?  @db.Timestamp(6)
+  watch_count              Int?       @default(0)
+  last_watched_at_utc      DateTime?  @db.Timestamp(6)
+  bookmarked_timestamps    Json?
+  created_by               String     @db.Uuid
+  created_at_utc           DateTime   @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by               String?    @db.Uuid
+  updated_at_utc           DateTime?  @db.Timestamp(6)
+  status                   String?    @default("in_progress") @db.VarChar(50)
+  mst_users                mst_users  @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_video_progress_user")
+  cnt_videos               cnt_videos @relation(fields: [video_id], references: [video_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_video_progress_video")
+
+  @@unique([user_id, video_id])
+  @@index([user_id], map: "idx_video_progress_user")
+  @@index([video_id], map: "idx_video_progress_video")
+}
+
+model mst_chapters {
+  chapter_id                 String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  subject_id                 String        @db.Uuid
+  chapter_code               String        @db.VarChar(50)
+  chapter_name               String        @db.VarChar(255)
+  chapter_description        String?
+  chapter_number             Int?
+  display_order              Int?          @default(0)
+  estimated_duration_minutes Int?
+  created_by                 String        @db.Uuid
+  created_at_utc             DateTime      @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                 String?       @db.Uuid
+  updated_at_utc             DateTime?     @db.Timestamp(6)
+  is_active                  Boolean?      @default(true)
+  mst_subjects               mst_subjects  @relation(fields: [subject_id], references: [subject_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_chapters_subject")
+  mst_lessons                mst_lessons[]
+
+  @@unique([subject_id, chapter_code])
+  @@index([chapter_code], map: "idx_chapters_code")
+  @@index([display_order], map: "idx_chapters_display_order")
+  @@index([subject_id], map: "idx_chapters_subject")
+}
+
+model mst_lessons {
+  lesson_id                  String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  chapter_id                 String           @db.Uuid
+  lesson_code                String           @db.VarChar(50)
+  lesson_name                String           @db.VarChar(255)
+  lesson_description         String?
+  lesson_number              Int?
+  display_order              Int?             @default(0)
+  learning_objectives        String?
+  estimated_duration_minutes Int?
+  created_by                 String           @db.Uuid
+  created_at_utc             DateTime         @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                 String?          @db.Uuid
+  updated_at_utc             DateTime?        @db.Timestamp(6)
+  is_active                  Boolean?         @default(true)
+  cnt_documents              cnt_documents[]
+  cnt_flashcards             cnt_flashcards[]
+  cnt_questions              cnt_questions[]
+  cnt_videos                 cnt_videos[]
+  mst_chapters               mst_chapters     @relation(fields: [chapter_id], references: [chapter_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lessons_chapter")
+
+  @@unique([chapter_id, lesson_code])
+  @@index([chapter_id], map: "idx_lessons_chapter")
+  @@index([lesson_code], map: "idx_lessons_code")
+  @@index([display_order], map: "idx_lessons_display_order")
+}
+
+model mst_roles {
+  role_id          String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  role_code        String           @unique @db.VarChar(50)
+  role_name        String           @db.VarChar(100)
+  role_description String?
+  role_level       Int?             @default(0)
+  created_by       String           @db.Uuid
+  created_at_utc   DateTime         @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by       String?          @db.Uuid
+  updated_at_utc   DateTime?        @db.Timestamp(6)
+  is_active        Boolean?         @default(true)
+  mst_user_roles   mst_user_roles[]
+
+  @@index([role_code], map: "idx_roles_code")
+}
+
+model mst_subjects {
+  subject_id                String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  subject_code              String                    @unique @db.VarChar(50)
+  subject_name              String                    @db.VarChar(255)
+  subject_description       String?
+  subject_icon_url          String?
+  subject_banner_url        String?
+  subject_preview_video_url String?
+  display_order             Int?                      @default(0)
+  creator_id                String?                   @db.Uuid
+  is_free                   Boolean?                  @default(true)
+  price_amount              Decimal?                  @default(0.00) @db.Decimal(12, 2)
+  original_price            Decimal?                  @db.Decimal(12, 2)
+  currency_code             String?                   @default("VND") @db.VarChar(3)
+  discount_percent          Int?                      @default(0)
+  discount_valid_until_utc  DateTime?                 @db.Timestamp(6)
+  total_chapters            Int?                      @default(0)
+  total_lessons             Int?                      @default(0)
+  total_videos              Int?                      @default(0)
+  total_documents           Int?                      @default(0)
+  total_questions           Int?                      @default(0)
+  estimated_duration_hours  Int?
+  purchase_count            Int?                      @default(0)
+  rating_average            Decimal?                  @db.Decimal(3, 2)
+  rating_count              Int?                      @default(0)
+  published_at_utc          DateTime?                 @db.Timestamp(6)
+  is_featured               Boolean?                  @default(false)
+  created_by                String                    @db.Uuid
+  created_at_utc            DateTime                  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                String?                   @db.Uuid
+  updated_at_utc            DateTime?                 @db.Timestamp(6)
+  is_active                 Boolean?                  @default(true)
+  status                    String?                   @default("draft") @db.VarChar(50)
+  ai_question_generations   ai_question_generations[]
+  cnt_documents             cnt_documents[]
+  cnt_flashcards            cnt_flashcards[]
+  cnt_question_banks        cnt_question_banks[]
+  cnt_questions             cnt_questions[]
+  cnt_videos                cnt_videos[]
+  mst_chapters              mst_chapters[]
+  mst_users                 mst_users?                @relation(fields: [creator_id], references: [user_id], onUpdate: NoAction, map: "fk_subjects_creator")
+  pmt_subject_purchases     pmt_subject_purchases[]
+
+  @@index([subject_code], map: "idx_subjects_code")
+  @@index([creator_id], map: "idx_subjects_creator")
+  @@index([is_free], map: "idx_subjects_is_free")
+  @@index([price_amount], map: "idx_subjects_price")
+  @@index([published_at_utc(sort: Desc)], map: "idx_subjects_published_at")
+  @@index([status], map: "idx_subjects_status")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model mst_subscription_plans {
+  plan_id           String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  plan_code         String                 @unique @db.VarChar(50)
+  plan_name         String                 @db.VarChar(100)
+  plan_description  String?
+  plan_type         subscription_plan_type
+  price_amount      Decimal                @default(0.00) @db.Decimal(10, 2)
+  currency_code     String?                @default("VND") @db.VarChar(3)
+  duration_days     Int?
+  plan_limits       Json                   @default("{\"max_videos\": 10, \"max_questions\": -1, \"max_flashcards\": -1, \"max_uploads_mb\": 100, \"can_create_content\": false, \"can_export_reports\": false, \"ai_requests_per_day\": 0, \"can_download_offline\": false, \"can_create_study_groups\": false, \"daily_practice_attempts\": 5, \"can_access_premium_content\": false}")
+  display_order     Int?                   @default(0)
+  is_featured       Boolean?               @default(false)
+  created_by        String                 @db.Uuid
+  created_at_utc    DateTime               @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by        String?                @db.Uuid
+  updated_at_utc    DateTime?              @db.Timestamp(6)
+  is_active         Boolean?               @default(true)
+  pmt_subscriptions pmt_subscriptions[]
+
+  @@index([plan_code], map: "idx_plans_code")
+  @@index([plan_type], map: "idx_plans_type")
+}
+
+model mst_tags {
+  tag_id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tag_name        String    @unique @db.VarChar(100)
+  tag_slug        String    @unique @db.VarChar(100)
+  tag_description String?
+  tag_color       String?   @db.VarChar(7)
+  usage_count     Int?      @default(0)
+  created_by      String    @db.Uuid
+  created_at_utc  DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by      String?   @db.Uuid
+  updated_at_utc  DateTime? @db.Timestamp(6)
+  is_active       Boolean?  @default(true)
+
+  @@index([tag_name], map: "idx_tags_name")
+  @@index([tag_slug], map: "idx_tags_slug")
+  @@index([usage_count(sort: Desc)], map: "idx_tags_usage_count")
+}
+
+model mst_user_roles {
+  user_role_id    String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id         String    @db.Uuid
+  role_id         String    @db.Uuid
+  assigned_at_utc DateTime? @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  expires_at_utc  DateTime? @db.Timestamp(6)
+  created_by      String    @db.Uuid
+  created_at_utc  DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by      String?   @db.Uuid
+  updated_at_utc  DateTime? @db.Timestamp(6)
+  is_active       Boolean?  @default(true)
+  mst_roles       mst_roles @relation(fields: [role_id], references: [role_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_roles_role")
+  mst_users       mst_users @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_roles_user")
+
+  @@unique([user_id, role_id])
+  @@index([role_id], map: "idx_user_roles_role")
+  @@index([user_id], map: "idx_user_roles_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model mst_users {
+  user_id                                                                String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email                                                                  String                    @unique @db.VarChar(255)
+  username                                                               String?                   @unique @db.VarChar(100)
+  password_hash                                                          String?                   @db.VarChar(255)
+  full_name                                                              String?                   @db.VarChar(255)
+  display_name                                                           String?                   @db.VarChar(100)
+  avatar_url                                                             String?
+  phone_number                                                           String?                   @db.VarChar(20)
+  date_of_birth                                                          DateTime?                 @db.Date
+  bio                                                                    String?
+  timezone_offset                                                        Int?                      @default(0)
+  email_verified                                                         Boolean?                  @default(false)
+  last_login_at_utc                                                      DateTime?                 @db.Timestamp(6)
+  created_by                                                             String                    @db.Uuid
+  created_at_utc                                                         DateTime                  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                                                             String?                   @db.Uuid
+  updated_at_utc                                                         DateTime?                 @db.Timestamp(6)
+  is_active                                                              Boolean?                  @default(true)
+  adm_system_logs                                                        adm_system_logs[]
+  ai_explanations                                                        ai_explanations[]
+  ai_question_generations                                                ai_question_generations[]
+  cnt_documents                                                          cnt_documents[]
+  cnt_flashcards                                                         cnt_flashcards[]
+  cnt_question_banks                                                     cnt_question_banks[]
+  cnt_questions                                                          cnt_questions[]
+  cnt_videos                                                             cnt_videos[]
+  lrn_bookmarks                                                          lrn_bookmarks[]
+  lrn_flashcard_reviews                                                  lrn_flashcard_reviews[]
+  lrn_flashcard_sessions                                                 lrn_flashcard_sessions[]
+  lrn_learning_streaks                                                   lrn_learning_streaks?
+  lrn_practice_tests                                                     lrn_practice_tests[]
+  lrn_quiz_answers                                                       lrn_quiz_answers[]
+  lrn_quiz_attempts                                                      lrn_quiz_attempts[]
+  lrn_study_sessions                                                     lrn_study_sessions[]
+  lrn_test_submissions_lrn_test_submissions_graded_by_user_idTomst_users lrn_test_submissions[]    @relation("lrn_test_submissions_graded_by_user_idTomst_users")
+  lrn_test_submissions_lrn_test_submissions_user_idTomst_users           lrn_test_submissions[]    @relation("lrn_test_submissions_user_idTomst_users")
+  lrn_video_progress                                                     lrn_video_progress[]
+  mst_subjects                                                           mst_subjects[]
+  mst_user_roles                                                         mst_user_roles[]
+  pmt_coupon_usages                                                      pmt_coupon_usages[]
+  pmt_coupons                                                            pmt_coupons[]
+  pmt_orders                                                             pmt_orders[]
+  pmt_subject_purchases                                                  pmt_subject_purchases[]
+  pmt_subscriptions                                                      pmt_subscriptions[]
+  pmt_transactions                                                       pmt_transactions[]
+  usr_email_verifications                                                usr_email_verifications[]
+  usr_oauth_connections                                                  usr_oauth_connections[]
+  usr_password_resets                                                    usr_password_resets[]
+  usr_refresh_tokens                                                     usr_refresh_tokens[]
+
+  @@index([created_at_utc(sort: Desc)], map: "idx_users_created_at")
+  @@index([email], map: "idx_users_email")
+  @@index([username], map: "idx_users_username")
+}
+
+model pmt_coupon_usages {
+  usage_id         String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  coupon_id        String      @db.Uuid
+  user_id          String      @db.Uuid
+  order_id         String      @db.Uuid
+  discount_applied Decimal     @db.Decimal(12, 2)
+  used_at_utc      DateTime    @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  created_by       String      @db.Uuid
+  created_at_utc   DateTime    @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by       String?     @db.Uuid
+  updated_at_utc   DateTime?   @db.Timestamp(6)
+  status           String?     @default("applied") @db.VarChar(50)
+  pmt_coupons      pmt_coupons @relation(fields: [coupon_id], references: [coupon_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_coupon_usages_coupon")
+  pmt_orders       pmt_orders  @relation(fields: [order_id], references: [order_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_coupon_usages_order")
+  mst_users        mst_users   @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_coupon_usages_user")
+
+  @@index([coupon_id], map: "idx_coupon_usages_coupon")
+  @@index([order_id], map: "idx_coupon_usages_order")
+  @@index([user_id], map: "idx_coupon_usages_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model pmt_coupons {
+  coupon_id              String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  coupon_code            String              @unique @db.VarChar(50)
+  coupon_name            String              @db.VarChar(255)
+  coupon_description     String?
+  discount_type          String              @db.VarChar(20)
+  discount_value         Decimal             @db.Decimal(12, 2)
+  max_discount_amount    Decimal?            @db.Decimal(12, 2)
+  applies_to             String?             @default("all") @db.VarChar(50)
+  applicable_plan_ids    Json?
+  applicable_subject_ids Json?
+  min_order_amount       Decimal?            @db.Decimal(12, 2)
+  max_total_uses         Int?
+  max_uses_per_user      Int?                @default(1)
+  current_use_count      Int?                @default(0)
+  valid_from_utc         DateTime            @db.Timestamp(6)
+  valid_until_utc        DateTime            @db.Timestamp(6)
+  created_by_creator_id  String?             @db.Uuid
+  commission_percent     Decimal?            @db.Decimal(5, 2)
+  created_by             String              @db.Uuid
+  created_at_utc         DateTime            @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by             String?             @db.Uuid
+  updated_at_utc         DateTime?           @db.Timestamp(6)
+  status                 String?             @default("active") @db.VarChar(50)
+  pmt_coupon_usages      pmt_coupon_usages[]
+  mst_users              mst_users?          @relation(fields: [created_by_creator_id], references: [user_id], onUpdate: NoAction, map: "fk_coupons_creator")
+
+  @@index([applies_to], map: "idx_coupons_applies_to")
+  @@index([coupon_code], map: "idx_coupons_code")
+  @@index([status], map: "idx_coupons_status")
+  @@index([valid_from_utc, valid_until_utc], map: "idx_coupons_validity")
+}
+
+model pmt_order_items {
+  order_item_id              String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  order_id                   String     @db.Uuid
+  item_type                  String     @db.VarChar(50)
+  item_id                    String     @db.Uuid
+  item_name                  String     @db.VarChar(255)
+  item_description           String?
+  unit_price                 Decimal    @db.Decimal(12, 2)
+  quantity                   Int?       @default(1)
+  discount_amount            Decimal?   @default(0.00) @db.Decimal(12, 2)
+  line_total                 Decimal    @db.Decimal(12, 2)
+  subscription_duration_days Int?
+  created_by                 String     @db.Uuid
+  created_at_utc             DateTime   @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                 String?    @db.Uuid
+  updated_at_utc             DateTime?  @db.Timestamp(6)
+  status                     String?    @default("active") @db.VarChar(50)
+  pmt_orders                 pmt_orders @relation(fields: [order_id], references: [order_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_order_items_order")
+
+  @@index([order_id], map: "idx_order_items_order")
+  @@index([item_type, item_id], map: "idx_order_items_type")
+}
+
+model pmt_orders {
+  order_id                String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  order_code              String                  @unique @db.VarChar(50)
+  user_id                 String                  @db.Uuid
+  order_type              String                  @db.VarChar(50)
+  item_count              Int                     @default(1)
+  subtotal_amount         Decimal                 @db.Decimal(12, 2)
+  discount_amount         Decimal?                @default(0.00) @db.Decimal(12, 2)
+  tax_amount              Decimal?                @default(0.00) @db.Decimal(12, 2)
+  total_amount            Decimal                 @db.Decimal(12, 2)
+  currency_code           String?                 @default("VND") @db.VarChar(3)
+  coupon_code             String?                 @db.VarChar(50)
+  coupon_discount_percent Int?
+  customer_email          String?                 @db.VarChar(255)
+  customer_name           String?                 @db.VarChar(255)
+  customer_phone          String?                 @db.VarChar(20)
+  order_notes             String?
+  created_by              String                  @db.Uuid
+  created_at_utc          DateTime                @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by              String?                 @db.Uuid
+  updated_at_utc          DateTime?               @db.Timestamp(6)
+  payment_status          payment_status?         @default(pending)
+  paid_at_utc             DateTime?               @db.Timestamp(6)
+  cancelled_at_utc        DateTime?               @db.Timestamp(6)
+  refunded_at_utc         DateTime?               @db.Timestamp(6)
+  pmt_coupon_usages       pmt_coupon_usages[]
+  pmt_order_items         pmt_order_items[]
+  mst_users               mst_users               @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_orders_user")
+  pmt_subject_purchases   pmt_subject_purchases[]
+  pmt_subscriptions       pmt_subscriptions[]
+  pmt_transactions        pmt_transactions[]
+
+  @@index([order_code], map: "idx_orders_code")
+  @@index([created_at_utc(sort: Desc)], map: "idx_orders_created_at")
+  @@index([payment_status], map: "idx_orders_payment_status")
+  @@index([order_type], map: "idx_orders_type")
+  @@index([user_id], map: "idx_orders_user")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model pmt_subject_purchases {
+  purchase_id               String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  subject_id                String       @db.Uuid
+  user_id                   String       @db.Uuid
+  order_id                  String?      @db.Uuid
+  purchased_at_utc          DateTime     @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  purchase_type             String?      @default("purchased") @db.VarChar(50)
+  purchase_price            Decimal?     @default(0.00) @db.Decimal(12, 2)
+  currency_code             String?      @default("VND") @db.VarChar(3)
+  access_start_utc          DateTime     @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  access_end_utc            DateTime?    @db.Timestamp(6)
+  is_lifetime_access        Boolean?     @default(true)
+  progress_percent          Decimal?     @default(0.00) @db.Decimal(5, 2)
+  chapters_completed        Int?         @default(0)
+  lessons_completed         Int?         @default(0)
+  last_accessed_at_utc      DateTime?    @db.Timestamp(6)
+  completed_at_utc          DateTime?    @db.Timestamp(6)
+  certificate_issued        Boolean?     @default(false)
+  certificate_issued_at_utc DateTime?    @db.Timestamp(6)
+  certificate_url           String?
+  user_rating               Int?
+  user_review               String?
+  rated_at_utc              DateTime?    @db.Timestamp(6)
+  created_by                String       @db.Uuid
+  created_at_utc            DateTime     @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                String?      @db.Uuid
+  updated_at_utc            DateTime?    @db.Timestamp(6)
+  status                    String?      @default("active") @db.VarChar(50)
+  pmt_orders                pmt_orders?  @relation(fields: [order_id], references: [order_id], onUpdate: NoAction, map: "fk_subject_purchases_order")
+  mst_subjects              mst_subjects @relation(fields: [subject_id], references: [subject_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_subject_purchases_subject")
+  mst_users                 mst_users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_subject_purchases_user")
+
+  @@unique([subject_id, user_id])
+  @@index([order_id], map: "idx_subject_purchases_order")
+  @@index([purchased_at_utc(sort: Desc)], map: "idx_subject_purchases_purchased_at")
+  @@index([status], map: "idx_subject_purchases_status")
+  @@index([subject_id], map: "idx_subject_purchases_subject")
+  @@index([user_id], map: "idx_subject_purchases_user")
+}
+
+model pmt_subscriptions {
+  subscription_id              String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                      String                 @db.Uuid
+  plan_id                      String                 @db.Uuid
+  order_id                     String?                @db.Uuid
+  start_date_utc               DateTime               @db.Timestamp(6)
+  end_date_utc                 DateTime               @db.Timestamp(6)
+  subscription_amount          Decimal                @db.Decimal(12, 2)
+  currency_code                String?                @default("VND") @db.VarChar(3)
+  is_auto_renew                Boolean?               @default(false)
+  renewal_reminder_sent        Boolean?               @default(false)
+  renewed_from_subscription_id String?                @db.Uuid
+  cancelled_at_utc             DateTime?              @db.Timestamp(6)
+  cancellation_reason          String?
+  created_by                   String                 @db.Uuid
+  created_at_utc               DateTime               @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                   String?                @db.Uuid
+  updated_at_utc               DateTime?              @db.Timestamp(6)
+  status                       subscription_status?   @default(active)
+  pmt_orders                   pmt_orders?            @relation(fields: [order_id], references: [order_id], onUpdate: NoAction, map: "fk_subscriptions_order")
+  mst_subscription_plans       mst_subscription_plans @relation(fields: [plan_id], references: [plan_id], onUpdate: NoAction, map: "fk_subscriptions_plan")
+  mst_users                    mst_users              @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_subscriptions_user")
+
+  @@index([end_date_utc], map: "idx_subscriptions_end_date")
+  @@index([order_id], map: "idx_subscriptions_order")
+  @@index([plan_id], map: "idx_subscriptions_plan")
+  @@index([status], map: "idx_subscriptions_status")
+  @@index([user_id], map: "idx_subscriptions_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model pmt_transactions {
+  transaction_id       String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  order_id             String          @db.Uuid
+  user_id              String          @db.Uuid
+  transaction_type     String          @db.VarChar(50)
+  amount               Decimal         @db.Decimal(12, 2)
+  currency_code        String?         @default("VND") @db.VarChar(3)
+  sepay_order_code     String?         @unique @db.VarChar(255)
+  sepay_transaction_id String?         @db.VarChar(255)
+  sepay_qr_code        String?
+  sepay_payment_url    String?
+  sepay_response       Json?
+  payment_method       String?         @db.VarChar(50)
+  bank_code            String?         @db.VarChar(20)
+  payment_status       payment_status? @default(pending)
+  paid_at_utc          DateTime?       @db.Timestamp(6)
+  failed_at_utc        DateTime?       @db.Timestamp(6)
+  failure_reason       String?
+  refund_amount        Decimal?        @db.Decimal(12, 2)
+  refund_reason        String?
+  refunded_at_utc      DateTime?       @db.Timestamp(6)
+  transaction_metadata Json?
+  ip_address           String?         @db.Inet
+  user_agent           String?
+  created_by           String          @db.Uuid
+  created_at_utc       DateTime        @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by           String?         @db.Uuid
+  updated_at_utc       DateTime?       @db.Timestamp(6)
+  status               String?         @default("active") @db.VarChar(50)
+  pmt_orders           pmt_orders      @relation(fields: [order_id], references: [order_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_transactions_order")
+  mst_users            mst_users       @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_transactions_user")
+
+  @@index([created_at_utc(sort: Desc)], map: "idx_transactions_created_at")
+  @@index([order_id], map: "idx_transactions_order")
+  @@index([payment_status], map: "idx_transactions_payment_status")
+  @@index([sepay_order_code], map: "idx_transactions_sepay_order")
+  @@index([transaction_type], map: "idx_transactions_type")
+  @@index([user_id], map: "idx_transactions_user")
+}
+
+model usr_email_verifications {
+  verification_id      String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id              String    @db.Uuid
+  email                String    @db.VarChar(255)
+  verification_token   String    @unique @db.VarChar(255)
+  token_expires_at_utc DateTime  @db.Timestamp(6)
+  verified_at_utc      DateTime? @db.Timestamp(6)
+  created_by           String    @db.Uuid
+  created_at_utc       DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by           String?   @db.Uuid
+  updated_at_utc       DateTime? @db.Timestamp(6)
+  status               String?   @default("pending") @db.VarChar(50)
+  mst_users            mst_users @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_email_verifications_user")
+
+  @@index([status], map: "idx_email_verif_status")
+  @@index([verification_token], map: "idx_email_verif_token")
+  @@index([user_id], map: "idx_email_verif_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model usr_oauth_connections {
+  oauth_id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id          String    @db.Uuid
+  provider         String    @db.VarChar(50)
+  provider_user_id String    @db.VarChar(255)
+  provider_email   String?   @db.VarChar(255)
+  provider_data    Json?
+  created_by       String    @db.Uuid
+  created_at_utc   DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by       String?   @db.Uuid
+  updated_at_utc   DateTime? @db.Timestamp(6)
+  status           String?   @default("active") @db.VarChar(50)
+  mst_users        mst_users @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_oauth_connections_user")
+
+  @@unique([provider, provider_user_id])
+  @@index([provider], map: "idx_oauth_provider")
+  @@index([provider, provider_user_id], map: "idx_oauth_provider_user")
+  @@index([status], map: "idx_oauth_status")
+  @@index([user_id], map: "idx_oauth_user")
+}
+
+model usr_password_resets {
+  reset_id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id              String    @db.Uuid
+  email                String    @db.VarChar(255)
+  reset_token          String    @unique @db.VarChar(255)
+  token_expires_at_utc DateTime  @db.Timestamp(6)
+  used_at_utc          DateTime? @db.Timestamp(6)
+  created_by           String    @db.Uuid
+  created_at_utc       DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by           String?   @db.Uuid
+  updated_at_utc       DateTime? @db.Timestamp(6)
+  status               String?   @default("pending") @db.VarChar(50)
+  mst_users            mst_users @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_password_resets_user")
+
+  @@index([status], map: "idx_password_reset_status")
+  @@index([reset_token], map: "idx_password_reset_token")
+  @@index([user_id], map: "idx_password_reset_user")
+}
+
+model usr_refresh_tokens {
+  token_id       String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id        String    @db.Uuid
+  token          String    @unique @db.VarChar(500)
+  expires_at_utc DateTime  @db.Timestamp(6)
+  revoked_at_utc DateTime? @db.Timestamp(6)
+  created_by     String    @db.Uuid
+  created_at_utc DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by     String?   @db.Uuid
+  updated_at_utc DateTime? @db.Timestamp(6)
+  status         String?   @default("active") @db.VarChar(50)
+  mst_users      mst_users @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_refresh_tokens_user")
+
+  @@index([user_id], map: "idx_refresh_tokens_user")
+  @@index([token], map: "idx_refresh_tokens_token")
+  @@index([expires_at_utc], map: "idx_refresh_tokens_expires")
+}
+
+/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+enum ai_generation_status {
+  queued
+  processing
+  completed
+  failed
+  cancelled
+}
+
+/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+enum content_visibility {
+  public
+  private
+  premium_only
+  unlisted
+}
+
+/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+enum difficulty_level {
+  easy
+  medium
+  hard
+  expert
+}
+
+enum export_format {
+  pdf
+  csv
+  excel
+  json
+}
+
+enum export_status {
+  pending
+  processing
+  completed
+  failed
+  expired
+}
+
+enum login_method {
+  email_password
+  google
+}
+
+/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+enum moderation_status {
+  pending
+  approved
+  rejected
+  flagged
+  under_review
+}
+
+enum notification_type {
+  system
+  content_update
+  achievement
+  reminder
+  payment
+  moderation
+  message
+}
+
+enum payment_method {
+  payos
+}
+
+/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+enum payment_status {
+  pending
+  processing
+  completed
+  failed
+  refunded
+  cancelled
+}
+
+/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+enum question_type {
+  multiple_choice
+  true_false
+  essay
+  short_answer
+  fill_in_blank
+}
+
+/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+enum session_status {
+  started
+  in_progress
+  paused
+  completed
+  abandoned
+}
+
+/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+enum subscription_plan_type {
+  free
+  monthly_premium
+  yearly_premium
+  lifetime_premium
+}
+
+enum subscription_status {
+  active
+  expired
+  cancelled
+  suspended
+  trial
+}
+
+enum test_status {
+  not_started
+  in_progress
+  submitted
+  graded
+  expired
+}
+
+/// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+enum user_role_type {
+  admin
+  user
+  creator
+  premium_user
+}
