@@ -9,6 +9,8 @@ const {
   loginRules,
   refreshTokenRules,
   logoutRules,
+  forgotPasswordRules,
+  resetPasswordRules,
 } = require("../validators/auth.validator");
 
 const router = Router();
@@ -273,6 +275,71 @@ router.post("/refresh-token", refreshTokenRules, validate, authController.refres
  *         description: Access token missing or invalid
  */
 router.post("/logout", authenticate, logoutRules, validate, authController.logout);
+
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Request password reset
+ *     description: Sends a password reset link to the email if it is registered. Always returns the same message to prevent email enumeration.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: Reset link sent (if email exists)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       400:
+ *         description: Validation failed or cooldown active
+ */
+router.post("/forgot-password", forgotPasswordRules, validate, authController.forgotPassword);
+
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Reset password with token
+ *     description: Resets the user password using the token received via email. Token expires in 15 minutes. All existing sessions are revoked on success.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, newPassword]
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 example: a3f1b2c4d5e6...
+ *               newPassword:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: newSecret123
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post("/reset-password", resetPasswordRules, validate, authController.resetPassword);
 
 /**
  * @swagger
