@@ -1,18 +1,29 @@
+const config = require("./config");
 const app = require("./app");
-const pool = require("./db/connect");
+const prisma = require("./config/prisma");
 
-// kết nối database
-pool
-  .query("SELECT NOW()")
-  .then((res) => {
-    console.log("DB connected:", res.rows[0]);
-  })
-  .catch((err) => {
-    console.error("DB connection error:", err);
-  });
+async function start() {
+  try {
+    await prisma.$connect();
+    console.log("[DB] Connected to PostgreSQL");
 
-// chạy server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server chạy tại port ${PORT}`);
+    app.listen(config.port, () => {
+      console.log(`[SERVER] Running on port ${config.port} (${config.nodeEnv})`);
+    });
+  } catch (error) {
+    console.error("[SERVER] Failed to start:", error);
+    process.exit(1);
+  }
+}
+
+process.on("SIGINT", async () => {
+  await prisma.$disconnect();
+  process.exit(0);
 });
+
+process.on("SIGTERM", async () => {
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+start();
