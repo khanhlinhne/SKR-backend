@@ -1,8 +1,8 @@
 const { Router } = require("express");
 const userController = require("../controllers/user.controller");
 const { validate } = require("../middlewares/validate.middleware");
-const { authenticate } = require("../middlewares/auth.middleware");
-const { updateProfileRules, changePasswordRules } = require("../validators/user.validator");
+const { authenticate, authorize } = require("../middlewares/auth.middleware");
+const { updateProfileRules, changePasswordRules, getAllUsersRules } = require("../validators/user.validator");
 
 const router = Router();
 
@@ -12,6 +12,79 @@ const router = Router();
  *   - name: User
  *     description: User profile management
  */
+
+/**
+ * @swagger
+ * /api/user/all:
+ *   get:
+ *     tags: [User]
+ *     summary: Get all users (Admin)
+ *     description: Returns a paginated list of all users with optional search, filter and sort. Requires admin role.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Items per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by email, username, full name or phone number
+ *       - in: query
+ *         name: isActive
+ *         schema:
+ *           type: string
+ *           enum: ["true", "false"]
+ *         description: Filter by active status
+ *       - in: query
+ *         name: emailVerified
+ *         schema:
+ *           type: string
+ *           enum: ["true", "false"]
+ *         description: Filter by email verification status
+ *       - in: query
+ *         name: role
+ *         schema:
+ *           type: string
+ *         description: Filter by role code (e.g. admin, creator, student)
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [createdAt, email, fullName, username, lastLoginAt]
+ *           default: createdAt
+ *         description: Sort field
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order
+ *     responses:
+ *       200:
+ *         description: Users retrieved successfully
+ *       400:
+ *         description: Validation failed
+ *       401:
+ *         description: Access token missing or invalid
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get("/all", authenticate, authorize("admin"), getAllUsersRules, validate, userController.getAllUsers);
 
 /**
  * @swagger

@@ -3,7 +3,78 @@ const AppError = require("../utils/AppError");
 const userRepository = require("../repositories/user.repository");
 const userDto = require("../dtos/user.dto");
 
+const ALLOWED_SORT_FIELDS = {
+  createdAt: "created_at_utc",
+  email: "email",
+  fullName: "full_name",
+  username: "username",
+  lastLoginAt: "last_login_at_utc",
+};
+
 const userService = {
+  async getAllUsers(query) {
+    const page = Math.max(parseInt(query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(query.limit, 10) || 10, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const where = {};
+
+    if (query.search) {
+      where.OR = [
+        { email: { contains: query.search, mode: "insensitive" } },
+        { username: { contains: query.search, mode: "insensitive" } },
+        { full_name: { contains: query.search, mode: "insensitive" } },
+        { phone_number: { contains: query.search, mode: "insensitive" } },
+      ];
+    }
+
+    if (query.isActive !== undefined && query.isActive !== "") {
+      where.is_active = query.isActive === "true";
+    }
+
+    if (query.emailVerified !== undefined && query.emailVerified !== "") {
+      where.email_verified = query.emailVerified === "true";
+    }
+
+    if (query.role) {
+      where.mst_user_roles = {
+        some: {
+          is_active: true,
+          mst_roles: { role_code: query.role },
+          OR: [
+            { expires_at_utc: null },
+            { expires_at_utc: { gt: new Date() } },
+          ],
+        },
+      };
+    }
+
+    const sortField = ALLOWED_SORT_FIELDS[query.sortBy] || "created_at_utc";
+    const sortOrder = query.sortOrder === "asc" ? "asc" : "desc";
+    const orderBy = { [sortField]: sortOrder };
+
+    const { items, totalItems } = await userRepository.findMany({
+      where,
+      orderBy,
+      skip,
+      take: limit,
+    });
+
+    const totalPages = Math.ceil(totalItems / limit);
+
+    return {
+      items: items.map(userDto.toAdminListItem),
+      pagination: {
+        page,
+        limit,
+        totalItems,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+    };
+  },
+
   async getProfile(userId) {
     const user = await userRepository.findByIdWithRoles(userId);
     if (!user || !user.is_active) {
