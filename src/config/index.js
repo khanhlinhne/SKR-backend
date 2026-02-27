@@ -28,6 +28,10 @@ const config = {
   otp: {
     expiresInMinutes: parseInt(process.env.OTP_EXPIRES_IN_MINUTES, 10) || 10,
   },
+
+  imgbb: {
+    apiKey: process.env.IMGBB_API_KEY,
+  },
 };
 
 module.exports = config;

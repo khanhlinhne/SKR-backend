@@ -1,12 +1,17 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const config = require("../config");
 const AppError = require("../utils/AppError");
 const jwtUtil = require("../utils/jwt.util");
 const userRepository = require("../repositories/user.repository");
 const tokenRepository = require("../repositories/token.repository");
 const verificationRepository = require("../repositories/verification.repository");
+const passwordResetRepository = require("../repositories/password-reset.repository");
 const emailService = require("./email.service");
 const authDto = require("../dtos/auth.dto");
+
+const RESET_TOKEN_EXPIRES_MINUTES = 15;
+const RESET_COOLDOWN_MS = 60 * 1000;
 
 function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -198,6 +203,64 @@ const authService = {
     }
 
     return { message: "Logged out successfully" };
+  },
+
+  async forgotPassword({ email }) {
+    const user = await userRepository.findByEmail(email);
+
+    if (!user || !user.is_active) {
+      return { message: "If this email is registered, a password reset link has been sent" };
+    }
+
+    const recent = await passwordResetRepository.findLatestPendingByUserId(user.user_id);
+    if (recent) {
+      const elapsed = Date.now() - new Date(recent.created_at_utc).getTime();
+      if (elapsed < RESET_COOLDOWN_MS) {
+        const waitSeconds = Math.ceil((RESET_COOLDOWN_MS - elapsed) / 1000);
+        throw AppError.badRequest(`Please wait ${waitSeconds}s before requesting another reset`);
+      }
+    }
+
+    await passwordResetRepository.invalidateAllByUserId(user.user_id);
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRES_MINUTES * 60 * 1000);
+
+    await passwordResetRepository.create({
+      userId: user.user_id,
+      email,
+      token,
+      expiresAt,
+    });
+
+    await emailService.sendPasswordResetEmail(email, token);
+
+    return { message: "If this email is registered, a password reset link has been sent" };
+  },
+
+  async resetPassword({ token, newPassword }) {
+    const reset = await passwordResetRepository.findByToken(token);
+
+    if (!reset || reset.status !== "pending") {
+      throw AppError.badRequest("Invalid or expired reset token");
+    }
+
+    if (new Date() > reset.token_expires_at_utc) {
+      await passwordResetRepository.markAsUsed(reset.reset_id);
+      throw AppError.badRequest("Reset token has expired");
+    }
+
+    const user = await userRepository.findById(reset.user_id);
+    if (!user || !user.is_active) {
+      throw AppError.notFound("User not found");
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await userRepository.update(user.user_id, { password_hash: passwordHash });
+    await passwordResetRepository.markAsUsed(reset.reset_id);
+    await tokenRepository.revokeAllByUserId(user.user_id);
+
+    return { message: "Password has been reset successfully. Please login again." };
   },
 
   async handleGoogleAuth(user) {

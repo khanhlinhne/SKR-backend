@@ -7,6 +7,26 @@ const userRepository = {
     });
   },
 
+  async findByIdWithRoles(userId) {
+    return prisma.mst_users.findUnique({
+      where: { user_id: userId },
+      include: {
+        mst_user_roles: {
+          where: {
+            is_active: true,
+            OR: [
+              { expires_at_utc: null },
+              { expires_at_utc: { gt: new Date() } },
+            ],
+          },
+          include: {
+            mst_roles: true,
+          },
+        },
+      },
+    });
+  },
+
   async findByEmail(email) {
     return prisma.mst_users.findUnique({
       where: { email },

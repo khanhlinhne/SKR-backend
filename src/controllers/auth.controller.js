@@ -61,6 +61,24 @@ const authController = {
     }
   },
 
+  async forgotPassword(req, res, next) {
+    try {
+      const data = await authService.forgotPassword(req.body);
+      return success(res, { message: data.message });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async resetPassword(req, res, next) {
+    try {
+      const data = await authService.resetPassword(req.body);
+      return success(res, { message: data.message });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   googleLogin(req, res, next) {
     const passport = require("../config/passport");
     passport.authenticate("google", {
