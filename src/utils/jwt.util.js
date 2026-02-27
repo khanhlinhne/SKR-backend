@@ -1,5 +1,5 @@
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
-const { v4: uuidv4 } = require("uuid");
 const config = require("../config");
 
 function generateAccessToken(payload) {
@@ -9,7 +9,7 @@ function generateAccessToken(payload) {
 }
 
 function generateRefreshToken() {
-  return uuidv4().replace(/-/g, "") + uuidv4().replace(/-/g, "");
+  return crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
 }
 
 function verifyAccessToken(token) {
