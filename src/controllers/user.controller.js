@@ -2,6 +2,15 @@ const userService = require("../services/user.service");
 const { success } = require("../utils/response.util");
 
 const userController = {
+  async getAllUsers(req, res, next) {
+    try {
+      const data = await userService.getAllUsers(req.query);
+      return success(res, { message: "Users retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async getProfile(req, res, next) {
     try {
       const data = await userService.getProfile(req.user.userId);
