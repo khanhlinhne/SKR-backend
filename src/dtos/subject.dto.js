@@ -38,17 +38,16 @@ function toDetail(subject) {
     chapterId: ch.chapter_id,
     chapterCode: ch.chapter_code,
     chapterName: ch.chapter_name,
-    chapterDescription: ch.chapter_description,
     chapterNumber: ch.chapter_number,
     displayOrder: ch.display_order,
     estimatedDurationMinutes: ch.estimated_duration_minutes,
+    totalLessons: ch._count?.mst_lessons ?? 0,
     lessons: (ch.mst_lessons || []).map((ls) => ({
       lessonId: ls.lesson_id,
-      lessonCode: ls.lesson_code,
       lessonName: ls.lesson_name,
-      lessonDescription: ls.lesson_description,
       lessonNumber: ls.lesson_number,
       displayOrder: ls.display_order,
+      estimatedDurationMinutes: ls.estimated_duration_minutes,
     })),
   }));
 
@@ -60,7 +59,6 @@ function toDetail(subject) {
     subjectIconUrl: subject.subject_icon_url,
     subjectBannerUrl: subject.subject_banner_url,
     subjectPreviewVideoUrl: subject.subject_preview_video_url,
-    displayOrder: subject.display_order,
     isFree: subject.is_free,
     priceAmount: subject.price_amount,
     originalPrice: subject.original_price,
@@ -79,8 +77,6 @@ function toDetail(subject) {
     isFeatured: subject.is_featured,
     status: subject.status,
     publishedAt: subject.published_at_utc,
-    createdAt: subject.created_at_utc,
-    updatedAt: subject.updated_at_utc,
     creator: subject.mst_users
       ? {
           userId: subject.mst_users.user_id,
