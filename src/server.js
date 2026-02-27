@@ -26,4 +26,8 @@ process.on("SIGTERM", async () => {
   process.exit(0);
 });
 
-start();
+if (process.env.VERCEL) {
+  module.exports = app;
+} else {
+  start();
+}
