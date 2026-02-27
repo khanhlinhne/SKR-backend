@@ -1,30 +1,73 @@
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
-const pool = require("../db/connect");
+const config = require("./index");
+const userRepository = require("../repositories/user.repository");
+const oauthRepository = require("../repositories/oauth.repository");
 
 passport.use(
   new GoogleStrategy(
     {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "/api/auth/google/callback",
+      clientID: config.google.clientId,
+      clientSecret: config.google.clientSecret,
+      callbackURL: config.google.callbackUrl,
     },
-    async (accessToken, refreshToken, profile, done) => {
-      const email = profile.emails[0].value;
+    async (_accessToken, _refreshToken, profile, done) => {
+      try {
+        const googleId = profile.id;
+        const email = profile.emails[0].value;
+        const displayName = profile.displayName || email.split("@")[0];
+        const avatarUrl = profile.photos?.[0]?.value || null;
 
-      let user = await pool.query(
-        "SELECT * FROM users WHERE email=$1",
-        [email]
-      );
+        const existingOauth = await oauthRepository.findByProviderAndProviderId("google", googleId);
 
-      if (user.rows.length === 0) {
-        user = await pool.query(
-          "INSERT INTO users(email, google_id, auth_provider) VALUES($1,$2,$3) RETURNING *",
-          [email, profile.id, "google"]
-        );
+        if (existingOauth) {
+          const user = await userRepository.findById(existingOauth.user_id);
+          return done(null, user);
+        }
+
+        let user = await userRepository.findByEmail(email);
+
+        if (user) {
+          await oauthRepository.create({
+            userId: user.user_id,
+            provider: "google",
+            providerUserId: googleId,
+            providerEmail: email,
+            providerData: { displayName, avatarUrl },
+            createdBy: user.user_id,
+          });
+
+          if (!user.email_verified) {
+            await userRepository.update(user.user_id, {
+              email_verified: true,
+              avatar_url: user.avatar_url || avatarUrl,
+            });
+          }
+        } else {
+          user = await userRepository.create({
+            email,
+            username: `${displayName.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`,
+            display_name: displayName,
+            avatar_url: avatarUrl,
+            email_verified: true,
+          });
+
+          await oauthRepository.create({
+            userId: user.user_id,
+            provider: "google",
+            providerUserId: googleId,
+            providerEmail: email,
+            providerData: { displayName, avatarUrl },
+            createdBy: user.user_id,
+          });
+        }
+
+        return done(null, user);
+      } catch (error) {
+        return done(error, null);
       }
-
-      return done(null, user.rows[0]);
     }
   )
 );
+
+module.exports = passport;

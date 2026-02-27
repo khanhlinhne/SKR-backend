@@ -1,73 +1,94 @@
-const { v4: uuidv4 } = require("uuid");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const UserModel = require("../models/user.model");
+const authService = require("../services/auth.service");
+const { success } = require("../utils/response.util");
+const config = require("../config");
 
-// REGISTER
-exports.register = async (req, res) => {
-  try {
-    const { username, email, password } = req.body;
-
-    if ((!username && !email) || !password) {
-      return res.status(400).json({ message: "Thiếu thông tin" });
+const authController = {
+  async register(req, res, next) {
+    try {
+      const data = await authService.register(req.body);
+      return success(res, {
+        statusCode: 201,
+        message: "Registration successful. Please check your email for the verification OTP.",
+        data,
+      });
+    } catch (err) {
+      next(err);
     }
+  },
 
-    const existing = await UserModel.findByEmailOrUsername(username, email);
-    if (existing) {
-      return res.status(400).json({ message: "User đã tồn tại" });
+  async verifyEmail(req, res, next) {
+    try {
+      const data = await authService.verifyEmail(req.body);
+      return success(res, { message: data.message });
+    } catch (err) {
+      next(err);
     }
+  },
 
-    const userId = uuidv4();
-    const hashedPassword = await bcrypt.hash(password, 10);
+  async resendOtp(req, res, next) {
+    try {
+      const data = await authService.resendOtp(req.body);
+      return success(res, { message: data.message });
+    } catch (err) {
+      next(err);
+    }
+  },
 
-    await UserModel.createUser({ userId, username, email, hashedPassword });
+  async login(req, res, next) {
+    try {
+      const data = await authService.login(req.body);
+      return success(res, { message: "Login successful", data });
+    } catch (err) {
+      next(err);
+    }
+  },
 
-    return res.status(201).json({ message: "Đăng ký thành công" });
-  } catch (error) {
-    console.error("REGISTER ERROR:", error);
-    return res.status(500).json({ message: "Lỗi server" });
-  }
+  async refreshToken(req, res, next) {
+    try {
+      const data = await authService.refreshToken(req.body);
+      return success(res, { message: "Token refreshed", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async logout(req, res, next) {
+    try {
+      const data = await authService.logout(req.body);
+      return success(res, { message: data.message });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  googleLogin(req, res, next) {
+    const passport = require("../config/passport");
+    passport.authenticate("google", {
+      scope: ["profile", "email"],
+      session: false,
+    })(req, res, next);
+  },
+
+  googleCallback(req, res, next) {
+    const passport = require("../config/passport");
+    passport.authenticate("google", { session: false }, async (err, user) => {
+      try {
+        if (err || !user) {
+          return res.redirect(`${config.clientUrl}/auth/error?message=Google authentication failed`);
+        }
+
+        const data = await authService.handleGoogleAuth(user);
+        const params = new URLSearchParams({
+          accessToken: data.tokens.accessToken,
+          refreshToken: data.tokens.refreshToken,
+        });
+
+        return res.redirect(`${config.clientUrl}/auth/callback?${params.toString()}`);
+      } catch (error) {
+        next(error);
+      }
+    })(req, res, next);
+  },
 };
 
-// LOGIN
-exports.login = async (req, res) => {
-  try {
-    const { username, email, password } = req.body;
-
-    if ((!username && !email) || !password) {
-      return res.status(400).json({ message: "Thiếu thông tin" });
-    }
-
-    const user = await UserModel.findByEmailOrUsername(username, email);
-
-    if (!user) {
-      return res.status(400).json({ message: "User không tồn tại" });
-    }
-
-    if (!user.is_active) {
-      return res.status(403).json({ message: "Tài khoản đã bị khóa" });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
-      return res.status(400).json({ message: "Sai mật khẩu" });
-    }
-
-    await UserModel.updateLastLogin(user.user_id);
-
-    const token = jwt.sign(
-      {
-        user_id: user.user_id,
-        username: user.username,
-        email: user.email,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" },
-    );
-
-    return res.json({ message: "Đăng nhập thành công", token });
-  } catch (error) {
-    console.error("LOGIN ERROR:", error);
-    return res.status(500).json({ message: "Lỗi server" });
-  }
-};
+module.exports = authController;
