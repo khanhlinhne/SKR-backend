@@ -1,4 +1,4 @@
-const { body } = require("express-validator");
+const { body, query } = require("express-validator");
 
 const updateProfileRules = [
   body("username")
@@ -39,7 +39,38 @@ const changePasswordRules = [
     .isLength({ min: 6 }).withMessage("New password must be at least 6 characters"),
 ];
 
+const getAllUsersRules = [
+  query("page")
+    .optional()
+    .isInt({ min: 1 }).withMessage("Page must be a positive integer"),
+  query("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 }).withMessage("Limit must be between 1 and 100"),
+  query("search")
+    .optional()
+    .trim()
+    .isLength({ max: 255 }).withMessage("Search must not exceed 255 characters"),
+  query("isActive")
+    .optional()
+    .isIn(["true", "false"]).withMessage("isActive must be true or false"),
+  query("emailVerified")
+    .optional()
+    .isIn(["true", "false"]).withMessage("emailVerified must be true or false"),
+  query("role")
+    .optional()
+    .trim()
+    .isLength({ max: 50 }).withMessage("Role must not exceed 50 characters"),
+  query("sortBy")
+    .optional()
+    .isIn(["createdAt", "email", "fullName", "username", "lastLoginAt"])
+    .withMessage("Invalid sortBy field"),
+  query("sortOrder")
+    .optional()
+    .isIn(["asc", "desc"]).withMessage("sortOrder must be asc or desc"),
+];
+
 module.exports = {
   updateProfileRules,
   changePasswordRules,
+  getAllUsersRules,
 };
