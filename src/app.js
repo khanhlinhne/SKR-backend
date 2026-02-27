@@ -26,10 +26,39 @@ app.get("/docs/json", (_req, res) => {
   res.json(swaggerSpec);
 });
 
-app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customSiteTitle: "SKR System API Docs",
-  customCss: ".swagger-ui .topbar { display: none }",
-}));
+if (process.env.VERCEL) {
+  const SWAGGER_CDN = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5";
+
+  app.get("/docs", (_req, res) => {
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SKR System API Docs</title>
+  <link rel="stylesheet" href="${SWAGGER_CDN}/swagger-ui.css">
+  <style>.swagger-ui .topbar { display: none }</style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="${SWAGGER_CDN}/swagger-ui-bundle.js"></script>
+  <script src="${SWAGGER_CDN}/swagger-ui-standalone-preset.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: '/docs/json',
+      dom_id: '#swagger-ui',
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+      layout: 'StandaloneLayout',
+    });
+  </script>
+</body>
+</html>`);
+  });
+} else {
+  app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: "SKR System API Docs",
+    customCss: ".swagger-ui .topbar { display: none }",
+  }));
+}
 
 app.get("/", (_req, res) => {
   res.json({ success: true, message: "SKR Backend API is running" });
