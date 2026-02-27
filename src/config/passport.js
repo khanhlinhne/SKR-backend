@@ -4,6 +4,12 @@ const config = require("./index");
 const userRepository = require("../repositories/user.repository");
 const oauthRepository = require("../repositories/oauth.repository");
 
+if (!config.google.clientId || !config.google.clientSecret) {
+  console.warn("[PASSPORT] Google OAuth credentials not set, skipping Google strategy");
+  module.exports = passport;
+  return;
+}
+
 passport.use(
   new GoogleStrategy(
     {
