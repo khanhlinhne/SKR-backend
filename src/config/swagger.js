@@ -2,11 +2,11 @@ const swaggerJsdoc = require("swagger-jsdoc");
 const path = require("path");
 
 function getServers() {
-  if (process.env.VERCEL_URL) {
+  if (process.env.VERCEL) {
     return [
       {
-        url: `https://${process.env.VERCEL_URL}`,
-        description: "Vercel deployment",
+        url: "/",
+        description: "Current server",
       },
     ];
   }
