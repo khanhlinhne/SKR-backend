@@ -11,7 +11,24 @@ const { timezoneConverter } = require("./middlewares/timezone.middleware");
 
 const app = express();
 
-app.use(cors({ origin: config.clientUrl, credentials: true }));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      const allowed = [config.clientUrl];
+      if (process.env.VERCEL_URL) {
+        allowed.push(`https://${process.env.VERCEL_URL}`);
+      }
+      if (!origin || allowed.includes(origin)) {
+        return callback(null, true);
+      }
+      if (process.env.VERCEL && origin?.endsWith(".vercel.app")) {
+        return callback(null, true);
+      }
+      callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(timezoneConverter);
