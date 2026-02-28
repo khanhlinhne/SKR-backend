@@ -1,6 +1,26 @@
 const swaggerJsdoc = require("swagger-jsdoc");
 const path = require("path");
 
+function getServers() {
+  if (process.env.VERCEL_URL) {
+    return [
+      {
+        url: `https://${process.env.VERCEL_URL}`,
+        description: "Vercel deployment",
+      },
+    ];
+  }
+  return [
+    {
+      url: "http://localhost:{port}",
+      description: "Development server",
+      variables: {
+        port: { default: process.env.PORT || "5000" },
+      },
+    },
+  ];
+}
+
 const options = {
   definition: {
     openapi: "3.0.0",
@@ -9,15 +29,7 @@ const options = {
       version: "2.0.0",
       description: "SKR System Backend API Documentation",
     },
-    servers: [
-      {
-        url: "http://localhost:{port}",
-        description: "Development server",
-        variables: {
-          port: { default: "5000" },
-        },
-      },
-    ],
+    servers: getServers(),
     components: {
       securitySchemes: {
         BearerAuth: {
