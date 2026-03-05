@@ -16,6 +16,9 @@ npm-debug.log*
 dist/
 build/
 
+# Uploaded files
+uploads/
+
 # OS
 .DS_Store
 Thumbs.db
