@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const cors = require("cors");
 const morgan = require("morgan");
 const passport = require("passport");
@@ -11,12 +12,24 @@ const { timezoneConverter } = require("./middlewares/timezone.middleware");
 
 const app = express();
 
+// Serve uploaded documents (PDF, DOCX, etc.) at /uploads/documents
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
 app.use(
   cors({
     origin: function (origin, callback) {
       const allowed = [config.clientUrl];
       if (process.env.VERCEL_URL) {
         allowed.push(`https://${process.env.VERCEL_URL}`);
+      }
+      // Allow same-origin (e.g. Swagger UI at /docs calling /api) and development
+      const serverOrigin = `http://localhost:${config.port}`;
+      if (serverOrigin && !allowed.includes(serverOrigin)) {
+        allowed.push(serverOrigin);
+      }
+      if (config.nodeEnv === "development") {
+        const alt = `http://127.0.0.1:${config.port}`;
+        if (!allowed.includes(alt)) allowed.push(alt);
       }
       if (!origin || allowed.includes(origin)) {
         return callback(null, true);
