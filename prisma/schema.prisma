@@ -711,6 +711,7 @@ model mst_subjects {
   cnt_questions             cnt_questions[]
   cnt_videos                cnt_videos[]
   mst_chapters              mst_chapters[]
+  mst_package_courses       mst_package_courses[]
   mst_users                 mst_users?                @relation(fields: [creator_id], references: [user_id], onUpdate: NoAction, map: "fk_subjects_creator")
   pmt_subject_purchases     pmt_subject_purchases[]
 
@@ -1145,6 +1146,75 @@ model usr_refresh_tokens {
   @@index([user_id], map: "idx_refresh_tokens_user")
   @@index([token], map: "idx_refresh_tokens_token")
   @@index([expires_at_utc], map: "idx_refresh_tokens_expires")
+}
+
+model adm_settings {
+  setting_id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  setting_key         String    @unique @db.VarChar(100)
+  setting_value       String?
+  setting_type        String    @default("string") @db.VarChar(20)
+  setting_group       String    @default("general") @db.VarChar(50)
+  setting_label       String    @db.VarChar(255)
+  setting_description String?
+  is_public           Boolean?  @default(false)
+  display_order       Int?      @default(0)
+  created_by          String    @db.Uuid
+  created_at_utc      DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by          String?   @db.Uuid
+  updated_at_utc      DateTime? @db.Timestamp(6)
+  is_active           Boolean?  @default(true)
+
+  @@index([setting_key], map: "idx_settings_key")
+  @@index([setting_group], map: "idx_settings_group")
+  @@index([is_public], map: "idx_settings_is_public")
+}
+
+model mst_packages {
+  package_id               String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  package_code             String                @unique @db.VarChar(50)
+  package_name             String                @db.VarChar(255)
+  package_description      String?
+  package_icon_url         String?
+  package_banner_url       String?
+  display_order            Int?                  @default(0)
+  is_free                  Boolean?              @default(false)
+  price_amount             Decimal?              @default(0.00) @db.Decimal(12, 2)
+  original_price           Decimal?              @db.Decimal(12, 2)
+  currency_code            String?               @default("VND") @db.VarChar(3)
+  discount_percent         Int?                  @default(0)
+  discount_valid_until_utc DateTime?             @db.Timestamp(6)
+  total_courses            Int?                  @default(0)
+  purchase_count           Int?                  @default(0)
+  is_featured              Boolean?              @default(false)
+  published_at_utc         DateTime?             @db.Timestamp(6)
+  created_by               String                @db.Uuid
+  created_at_utc           DateTime              @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by               String?               @db.Uuid
+  updated_at_utc           DateTime?             @db.Timestamp(6)
+  is_active                Boolean?              @default(true)
+  status                   String?               @default("draft") @db.VarChar(50)
+  mst_package_courses      mst_package_courses[]
+
+  @@index([package_code], map: "idx_packages_code")
+  @@index([status], map: "idx_packages_status")
+  @@index([is_free], map: "idx_packages_is_free")
+  @@index([price_amount], map: "idx_packages_price")
+  @@index([published_at_utc(sort: Desc)], map: "idx_packages_published_at")
+}
+
+model mst_package_courses {
+  package_course_id String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  package_id        String       @db.Uuid
+  subject_id        String       @db.Uuid
+  display_order     Int?         @default(0)
+  created_by        String       @db.Uuid
+  created_at_utc    DateTime     @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  mst_packages      mst_packages @relation(fields: [package_id], references: [package_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_package_courses_package")
+  mst_subjects      mst_subjects @relation(fields: [subject_id], references: [subject_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_package_courses_subject")
+
+  @@unique([package_id, subject_id])
+  @@index([package_id], map: "idx_package_courses_package")
+  @@index([subject_id], map: "idx_package_courses_subject")
 }
 
 /// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
