@@ -71,9 +71,16 @@ const forgotPasswordRules = [
 ];
 
 const resetPasswordRules = [
-  body("token")
+  body("email")
     .trim()
-    .notEmpty().withMessage("Reset token is required"),
+    .notEmpty().withMessage("Email is required")
+    .isEmail().withMessage("Invalid email format")
+    .normalizeEmail(),
+  body("otp")
+    .trim()
+    .notEmpty().withMessage("OTP is required")
+    .isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits")
+    .isNumeric().withMessage("OTP must contain only digits"),
   body("newPassword")
     .notEmpty().withMessage("New password is required")
     .isLength({ min: 6 }).withMessage("Password must be at least 6 characters"),
