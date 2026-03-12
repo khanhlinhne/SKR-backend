@@ -281,8 +281,8 @@ router.post("/logout", authenticate, logoutRules, validate, authController.logou
  * /api/auth/forgot-password:
  *   post:
  *     tags: [Auth]
- *     summary: Request password reset
- *     description: Sends a password reset link to the email if it is registered. Always returns the same message to prevent email enumeration.
+ *     summary: Request password reset OTP
+ *     description: Sends a 6-digit OTP to the email for password reset. Always returns the same message to prevent email enumeration.
  *     requestBody:
  *       required: true
  *       content:
@@ -297,7 +297,7 @@ router.post("/logout", authenticate, logoutRules, validate, authController.logou
  *                 example: user@example.com
  *     responses:
  *       200:
- *         description: Reset link sent (if email exists)
+ *         description: OTP sent (if email exists)
  *         content:
  *           application/json:
  *             schema:
@@ -312,19 +312,25 @@ router.post("/forgot-password", forgotPasswordRules, validate, authController.fo
  * /api/auth/reset-password:
  *   post:
  *     tags: [Auth]
- *     summary: Reset password with token
- *     description: Resets the user password using the token received via email. Token expires in 15 minutes. All existing sessions are revoked on success.
+ *     summary: Reset password with OTP
+ *     description: Resets the user password using the OTP received via email. OTP expires in 15 minutes. All existing sessions are revoked on success.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [token, newPassword]
+ *             required: [email, otp, newPassword]
  *             properties:
- *               token:
+ *               email:
  *                 type: string
- *                 example: a3f1b2c4d5e6...
+ *                 format: email
+ *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 minLength: 6
+ *                 maxLength: 6
+ *                 example: "123456"
  *               newPassword:
  *                 type: string
  *                 minLength: 6
@@ -337,7 +343,7 @@ router.post("/forgot-password", forgotPasswordRules, validate, authController.fo
  *             schema:
  *               $ref: '#/components/schemas/SuccessResponse'
  *       400:
- *         description: Invalid or expired token
+ *         description: Invalid or expired OTP
  */
 router.post("/reset-password", resetPasswordRules, validate, authController.resetPassword);
 
