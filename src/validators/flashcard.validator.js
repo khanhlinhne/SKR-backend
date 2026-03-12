@@ -10,7 +10,7 @@ const createSetRules = [
   body("setDescription").optional().trim().isLength({ max: 2000 }).withMessage("setDescription too long"),
   body("setCoverImageUrl").optional().trim().isURL().withMessage("setCoverImageUrl must be a valid URL"),
   body("lessonId").optional().isUUID().withMessage("lessonId must be a valid UUID"),
-  body("subjectId").optional().isUUID().withMessage("subjectId must be a valid UUID"),
+  body("courseId").optional().isUUID().withMessage("courseId must be a valid UUID"),
   body("visibility")
     .optional()
     .isIn(["public", "private", "premium_only", "unlisted"])
@@ -34,7 +34,7 @@ const updateSetRules = [
   body("setDescription").optional().trim().isLength({ max: 2000 }).withMessage("setDescription too long"),
   body("setCoverImageUrl").optional().trim().isURL().withMessage("setCoverImageUrl must be a valid URL"),
   body("lessonId").optional().isUUID().withMessage("lessonId must be a valid UUID"),
-  body("subjectId").optional().isUUID().withMessage("subjectId must be a valid UUID"),
+  body("courseId").optional().isUUID().withMessage("courseId must be a valid UUID"),
   body("visibility")
     .optional()
     .isIn(["public", "private", "premium_only", "unlisted"])
