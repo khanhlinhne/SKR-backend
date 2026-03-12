@@ -46,7 +46,7 @@ router.use(authenticate);
  *               lessonId:
  *                 type: string
  *                 format: uuid
- *               subjectId:
+ *               courseId:
  *                 type: string
  *                 format: uuid
  *               visibility:
