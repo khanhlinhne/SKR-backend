@@ -1,5 +1,4 @@
 const bcrypt = require("bcryptjs");
-const crypto = require("crypto");
 const config = require("../config");
 const AppError = require("../utils/AppError");
 const jwtUtil = require("../utils/jwt.util");
@@ -209,7 +208,7 @@ const authService = {
     const user = await userRepository.findByEmail(email);
 
     if (!user || !user.is_active) {
-      return { message: "If this email is registered, a password reset link has been sent" };
+      return { message: "If this email is registered, an OTP has been sent" };
     }
 
     const recent = await passwordResetRepository.findLatestPendingByUserId(user.user_id);
@@ -217,42 +216,42 @@ const authService = {
       const elapsed = Date.now() - new Date(recent.created_at_utc).getTime();
       if (elapsed < RESET_COOLDOWN_MS) {
         const waitSeconds = Math.ceil((RESET_COOLDOWN_MS - elapsed) / 1000);
-        throw AppError.badRequest(`Please wait ${waitSeconds}s before requesting another reset`);
+        throw AppError.badRequest(`Please wait ${waitSeconds}s before requesting another OTP`);
       }
     }
 
     await passwordResetRepository.invalidateAllByUserId(user.user_id);
 
-    const token = crypto.randomBytes(32).toString("hex");
+    const otp = generateOtp();
     const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRES_MINUTES * 60 * 1000);
 
     await passwordResetRepository.create({
       userId: user.user_id,
       email,
-      token,
+      token: otp,
       expiresAt,
     });
 
-    await emailService.sendPasswordResetEmail(email, token);
+    await emailService.sendPasswordResetOtp(email, otp);
 
-    return { message: "If this email is registered, a password reset link has been sent" };
+    return { message: "If this email is registered, an OTP has been sent" };
   },
 
-  async resetPassword({ token, newPassword }) {
-    const reset = await passwordResetRepository.findByToken(token);
+  async resetPassword({ email, otp, newPassword }) {
+    const user = await userRepository.findByEmail(email);
+    if (!user || !user.is_active) {
+      throw AppError.notFound("User not found");
+    }
 
-    if (!reset || reset.status !== "pending") {
-      throw AppError.badRequest("Invalid or expired reset token");
+    const reset = await passwordResetRepository.findByToken(otp);
+
+    if (!reset || reset.user_id !== user.user_id || reset.status !== "pending") {
+      throw AppError.badRequest("Invalid OTP");
     }
 
     if (new Date() > reset.token_expires_at_utc) {
       await passwordResetRepository.markAsUsed(reset.reset_id);
-      throw AppError.badRequest("Reset token has expired");
-    }
-
-    const user = await userRepository.findById(reset.user_id);
-    if (!user || !user.is_active) {
-      throw AppError.notFound("User not found");
+      throw AppError.badRequest("OTP has expired");
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
