@@ -21,7 +21,7 @@ const documentController = {
         documentTitle: req.body.documentTitle,
         documentDescription: req.body.documentDescription,
         lessonId: req.body.lessonId,
-        subjectId: req.body.subjectId,
+        courseId: req.body.courseId,
         visibility: req.body.visibility,
         tags,
       });

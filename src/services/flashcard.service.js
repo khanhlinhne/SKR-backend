@@ -1,7 +1,7 @@
 const AppError = require("../utils/AppError");
 const prisma = require("../config/prisma");
 const flashcardRepository = require("../repositories/flashcard.repository");
-const subjectRepository = require("../repositories/subject.repository");
+const courseRepository = require("../repositories/course.repository");
 const flashcardDto = require("../dtos/flashcard.dto");
 
 const VALID_VISIBILITY = ["public", "private", "premium_only", "unlisted"];
@@ -12,7 +12,7 @@ function normalizeOptionalId(value) {
   return value;
 }
 
-async function validateLessonAndSubject(lessonId, subjectId) {
+async function validateLessonAndCourse(lessonId, courseId) {
   if (lessonId) {
     const lesson = await prisma.mst_lessons.findUnique({
       where: { lesson_id: lessonId },
@@ -20,9 +20,9 @@ async function validateLessonAndSubject(lessonId, subjectId) {
     });
     if (!lesson) throw AppError.badRequest("Lesson not found with the given lessonId");
   }
-  if (subjectId) {
-    const subject = await subjectRepository.findById(subjectId);
-    if (!subject) throw AppError.badRequest("Subject not found with the given subjectId");
+  if (courseId) {
+    const course = await courseRepository.findById(courseId);
+    if (!course) throw AppError.badRequest("Course not found with the given courseId");
   }
 }
 
@@ -76,8 +76,8 @@ const flashcardService = {
       throw AppError.badRequest("Invalid visibility");
     }
     const lessonId = normalizeOptionalId(body.lessonId);
-    const subjectId = normalizeOptionalId(body.subjectId);
-    await validateLessonAndSubject(lessonId, subjectId);
+    const courseId = normalizeOptionalId(body.courseId);
+    await validateLessonAndCourse(lessonId, courseId);
 
     const set = await flashcardRepository.createSet({
       setTitle: body.setTitle,
@@ -85,7 +85,7 @@ const flashcardService = {
       setCoverImageUrl: body.setCoverImageUrl,
       creatorId: userId,
       lessonId,
-      subjectId,
+      courseId,
       visibility: body.visibility ?? "private",
       tags: body.tags,
       status: body.status ?? "draft",
@@ -110,9 +110,9 @@ const flashcardService = {
     }
 
     const lessonId = body.lessonId !== undefined ? normalizeOptionalId(body.lessonId) : undefined;
-    const subjectId = body.subjectId !== undefined ? normalizeOptionalId(body.subjectId) : undefined;
-    if (lessonId !== undefined || subjectId !== undefined) {
-      await validateLessonAndSubject(lessonId || null, subjectId || null);
+    const courseId = body.courseId !== undefined ? normalizeOptionalId(body.courseId) : undefined;
+    if (lessonId !== undefined || courseId !== undefined) {
+      await validateLessonAndCourse(lessonId || null, courseId || null);
     }
 
     await flashcardRepository.updateSet(flashcardSetId, {
@@ -120,7 +120,7 @@ const flashcardService = {
       setDescription: body.setDescription,
       setCoverImageUrl: body.setCoverImageUrl,
       lessonId,
-      subjectId,
+      courseId,
       visibility: body.visibility,
       tags: body.tags,
       status: body.status,
