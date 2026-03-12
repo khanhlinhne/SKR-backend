@@ -12,7 +12,7 @@ const documentRepository = {
         file_size_bytes: data.fileSizeBytes ?? null,
         uploader_id: data.uploaderId,
         lesson_id: data.lessonId ?? null,
-        subject_id: data.subjectId ?? null,
+        course_id: data.courseId ?? null,
         visibility: data.visibility ?? "private",
         tags: data.tags ?? null,
         created_by: data.createdBy,

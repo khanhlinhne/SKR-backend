@@ -48,7 +48,7 @@ const flashcardRepository = {
 
   async createSet(data) {
     const lessonId = data.lessonId && String(data.lessonId).trim() ? data.lessonId : null;
-    const subjectId = data.subjectId && String(data.subjectId).trim() ? data.subjectId : null;
+    const courseId = data.courseId && String(data.courseId).trim() ? data.courseId : null;
     return prisma.cnt_flashcards.create({
       data: {
         set_title: data.setTitle,
@@ -56,7 +56,7 @@ const flashcardRepository = {
         set_cover_image_url: data.setCoverImageUrl ?? null,
         creator_id: data.creatorId,
         lesson_id: lessonId,
-        subject_id: subjectId,
+        course_id: courseId,
         visibility: data.visibility ?? "private",
         tags: data.tags ?? null,
         total_cards: 0,
@@ -70,8 +70,8 @@ const flashcardRepository = {
     const lessonId = data.lessonId !== undefined
       ? (data.lessonId && String(data.lessonId).trim() ? data.lessonId : null)
       : undefined;
-    const subjectId = data.subjectId !== undefined
-      ? (data.subjectId && String(data.subjectId).trim() ? data.subjectId : null)
+    const courseId = data.courseId !== undefined
+      ? (data.courseId && String(data.courseId).trim() ? data.courseId : null)
       : undefined;
     return prisma.cnt_flashcards.update({
       where: { flashcard_set_id: flashcardSetId },
@@ -80,7 +80,7 @@ const flashcardRepository = {
         ...(data.setDescription !== undefined && { set_description: data.setDescription }),
         ...(data.setCoverImageUrl !== undefined && { set_cover_image_url: data.setCoverImageUrl }),
         ...(lessonId !== undefined && { lesson_id: lessonId }),
-        ...(subjectId !== undefined && { subject_id: subjectId }),
+        ...(courseId !== undefined && { course_id: courseId }),
         ...(data.visibility != null && { visibility: data.visibility }),
         ...(data.tags !== undefined && { tags: data.tags }),
         ...(data.status != null && { status: data.status }),
