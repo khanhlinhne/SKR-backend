@@ -68,6 +68,32 @@ const getItemsRules = [
   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
 ];
 
+const startStudySessionRules = [
+  param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+];
+
+const submitStudyReviewRules = [
+  param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+  param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),
+  body("flashcardItemId").isUUID().withMessage("flashcardItemId must be a valid UUID"),
+  body("result")
+    .isIn(["correct", "incorrect", "skip"])
+    .withMessage("result must be correct, incorrect or skip"),
+  body("timeToAnswerSeconds")
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage("timeToAnswerSeconds must be a non-negative integer"),
+];
+
+const completeStudySessionRules = [
+  param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+  param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),
+  body("sessionDurationSeconds")
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage("sessionDurationSeconds must be a non-negative integer"),
+];
+
 const itemIdParamRules = [
   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
   param("itemId").isUUID().withMessage("Flashcard item ID must be a valid UUID"),
@@ -105,6 +131,9 @@ module.exports = {
   setIdParamRules,
   getMySetsRules,
   getItemsRules,
+  startStudySessionRules,
+  submitStudyReviewRules,
+  completeStudySessionRules,
   itemIdParamRules,
   createItemRules,
   updateItemRules,

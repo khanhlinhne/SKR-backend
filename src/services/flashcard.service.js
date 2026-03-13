@@ -6,6 +6,7 @@ const flashcardDto = require("../dtos/flashcard.dto");
 
 const VALID_VISIBILITY = ["public", "private", "premium_only", "unlisted"];
 const VALID_STATUS_SET = ["draft", "active", "archived"];
+const VALID_REVIEW_RESULTS = ["correct", "incorrect", "skip"];
 
 function normalizeOptionalId(value) {
   if (value == null || (typeof value === "string" && !value.trim())) return null;
@@ -26,10 +27,86 @@ async function validateLessonAndCourse(lessonId, courseId) {
   }
 }
 
+function ensureSetReadable(set, userId) {
+  if (!set) throw AppError.notFound("Flashcard set not found");
+  if (set.creator_id !== userId && set.visibility === "private") {
+    throw AppError.forbidden("You do not have access to this flashcard set");
+  }
+}
+
+function ensureSetOwned(set, userId) {
+  if (!set) throw AppError.notFound("Flashcard set not found");
+  if (set.creator_id !== userId) {
+    throw AppError.forbidden("You can only manage your own flashcard sets");
+  }
+}
+
+function toNumber(value, fallback = 0) {
+  const parsed = value == null ? fallback : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function roundToTwo(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function buildReviewSchedule(result, previousEaseFactor, previousIntervalDays) {
+  const safeEaseFactor = Math.max(1.3, toNumber(previousEaseFactor, 2.5));
+  const safeIntervalDays = Math.max(0, Math.round(toNumber(previousIntervalDays, 0)));
+
+  if (result === "correct") {
+    const newEaseFactor = Math.min(5, roundToTwo(safeEaseFactor + 0.15));
+    const newIntervalDays =
+      safeIntervalDays <= 0 ? 1 : Math.max(Math.round(safeIntervalDays * newEaseFactor), safeIntervalDays + 1);
+
+    return {
+      userRating: 2,
+      wasCorrect: true,
+      previousEaseFactor: safeEaseFactor,
+      newEaseFactor,
+      previousIntervalDays: safeIntervalDays,
+      newIntervalDays,
+      nextReviewAtUtc: new Date(Date.now() + newIntervalDays * 24 * 60 * 60 * 1000),
+      reviewStatus: "completed",
+    };
+  }
+
+  if (result === "incorrect") {
+    const newEaseFactor = Math.max(1.3, roundToTwo(safeEaseFactor - 0.2));
+
+    return {
+      userRating: 1,
+      wasCorrect: false,
+      previousEaseFactor: safeEaseFactor,
+      newEaseFactor,
+      previousIntervalDays: safeIntervalDays,
+      newIntervalDays: 0,
+      nextReviewAtUtc: new Date(),
+      reviewStatus: "completed",
+    };
+  }
+
+  return {
+    userRating: null,
+    wasCorrect: null,
+    previousEaseFactor: safeEaseFactor,
+    newEaseFactor: safeEaseFactor,
+    previousIntervalDays: safeIntervalDays,
+    newIntervalDays: safeIntervalDays,
+    nextReviewAtUtc: new Date(),
+    reviewStatus: "skipped",
+  };
+}
+
+async function getDeckProgress(userId, flashcardSetId) {
+  const progressMap = await flashcardRepository.getUserSetProgressMap(userId, [flashcardSetId]);
+  return progressMap.get(flashcardSetId) || { masteredCount: 0, dueToday: 0 };
+}
+
 const flashcardService = {
   async getMySets(userId, query) {
     if (userId == null) {
-      throw AppError.unauthorized("Authentication required to list your sets.");
+      throw AppError.unauthorized("Authentication required to list flashcard sets.");
     }
     const page = Math.max(parseInt(query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 10, 1), 100);
@@ -38,16 +115,25 @@ const flashcardService = {
     if (query.status) where.status = query.status;
     if (query.visibility) where.visibility = query.visibility;
 
-    const { items, totalItems } = await flashcardRepository.findSetsByCreator(userId, {
+    const { items, totalItems } = await flashcardRepository.findAccessibleSets(userId, {
       where,
       orderBy: { created_at_utc: "desc" },
       skip,
       take: limit,
     });
 
+    const progressMap = await flashcardRepository.getUserSetProgressMap(
+      userId,
+      items.map((item) => item.flashcard_set_id)
+    );
+    const itemsWithProgress = items.map((item) => ({
+      ...item,
+      ...(progressMap.get(item.flashcard_set_id) || {}),
+    }));
+
     const totalPages = Math.ceil(totalItems / limit);
     return {
-      items: items.map(flashcardDto.setToListItem),
+      items: itemsWithProgress.map(flashcardDto.setToListItem),
       pagination: {
         page,
         limit,
@@ -61,11 +147,9 @@ const flashcardService = {
 
   async getSetById(flashcardSetId, userId) {
     const set = await flashcardRepository.findSetById(flashcardSetId);
-    if (!set) throw AppError.notFound("Flashcard set not found");
-    if (set.creator_id !== userId && set.visibility === "private") {
-      throw AppError.forbidden("You do not have access to this flashcard set");
-    }
-    return flashcardDto.setToDetail(set);
+    ensureSetReadable(set, userId);
+    const deckProgress = await getDeckProgress(userId, flashcardSetId);
+    return flashcardDto.setToDetail({ ...set, ...deckProgress });
   },
 
   async createSet(userId, body) {
@@ -99,8 +183,7 @@ const flashcardService = {
       throw AppError.unauthorized("Authentication required to update a flashcard set.");
     }
     const set = await flashcardRepository.findSetById(flashcardSetId);
-    if (!set) throw AppError.notFound("Flashcard set not found");
-    if (set.creator_id !== userId) throw AppError.forbidden("You can only edit your own flashcard sets");
+    ensureSetOwned(set, userId);
 
     if (body.visibility && !VALID_VISIBILITY.includes(body.visibility)) {
       throw AppError.badRequest("Invalid visibility");
@@ -134,18 +217,14 @@ const flashcardService = {
       throw AppError.unauthorized("Authentication required to delete a flashcard set.");
     }
     const set = await flashcardRepository.findSetById(flashcardSetId);
-    if (!set) throw AppError.notFound("Flashcard set not found");
-    if (set.creator_id !== userId) throw AppError.forbidden("You can only delete your own flashcard sets");
+    ensureSetOwned(set, userId);
     await flashcardRepository.deleteSet(flashcardSetId);
     return { deleted: true, flashcardSetId };
   },
 
   async getItems(flashcardSetId, userId) {
     const set = await flashcardRepository.findSetById(flashcardSetId);
-    if (!set) throw AppError.notFound("Flashcard set not found");
-    if (set.creator_id !== userId && set.visibility === "private") {
-      throw AppError.forbidden("You do not have access to this flashcard set");
-    }
+    ensureSetReadable(set, userId);
     return (set.cnt_flashcard_items || []).map(flashcardDto.itemToResponse);
   },
 
@@ -154,8 +233,7 @@ const flashcardService = {
       throw AppError.unauthorized("Authentication required to add flashcard items.");
     }
     const set = await flashcardRepository.findSetById(flashcardSetId);
-    if (!set) throw AppError.notFound("Flashcard set not found");
-    if (set.creator_id !== userId) throw AppError.forbidden("You can only add items to your own sets");
+    ensureSetOwned(set, userId);
 
     const cardOrder =
       body.cardOrder != null
@@ -183,8 +261,7 @@ const flashcardService = {
       throw AppError.unauthorized("Authentication required to update flashcard items.");
     }
     const set = await flashcardRepository.findSetById(flashcardSetId);
-    if (!set) throw AppError.notFound("Flashcard set not found");
-    if (set.creator_id !== userId) throw AppError.forbidden("You can only edit items in your own sets");
+    ensureSetOwned(set, userId);
 
     const item = await flashcardRepository.findItemById(flashcardItemId);
     if (!item || item.flashcard_set_id !== flashcardSetId) {
@@ -212,8 +289,7 @@ const flashcardService = {
       throw AppError.unauthorized("Authentication required to delete flashcard items.");
     }
     const set = await flashcardRepository.findSetById(flashcardSetId);
-    if (!set) throw AppError.notFound("Flashcard set not found");
-    if (set.creator_id !== userId) throw AppError.forbidden("You can only delete items from your own sets");
+    ensureSetOwned(set, userId);
 
     const item = await flashcardRepository.findItemById(flashcardItemId);
     if (!item || item.flashcard_set_id !== flashcardSetId) {
@@ -223,6 +299,133 @@ const flashcardService = {
     await flashcardRepository.deleteItem(flashcardItemId);
     await flashcardRepository.updateSetTotalCards(flashcardSetId, -1);
     return { deleted: true, flashcardItemId };
+  },
+
+  async startStudySession(flashcardSetId, userId) {
+    if (userId == null) {
+      throw AppError.unauthorized("Authentication required to start a study session.");
+    }
+
+    const set = await flashcardRepository.findSetById(flashcardSetId);
+    ensureSetReadable(set, userId);
+
+    const totalCards = (set.cnt_flashcard_items || []).length;
+    const session = await flashcardRepository.createStudySession({
+      userId,
+      flashcardSetId,
+      totalCards,
+      createdBy: userId,
+    });
+
+    return {
+      session: flashcardDto.sessionToResponse(session),
+      deckProgress: await getDeckProgress(userId, flashcardSetId),
+    };
+  },
+
+  async submitStudyReview(flashcardSetId, sessionId, userId, body) {
+    if (userId == null) {
+      throw AppError.unauthorized("Authentication required to save flashcard progress.");
+    }
+    if (!VALID_REVIEW_RESULTS.includes(body.result)) {
+      throw AppError.badRequest("result must be correct, incorrect or skip");
+    }
+
+    const set = await flashcardRepository.findSetById(flashcardSetId);
+    ensureSetReadable(set, userId);
+
+    const session = await flashcardRepository.findStudySessionById(sessionId);
+    if (!session || session.flashcard_set_id !== flashcardSetId) {
+      throw AppError.notFound("Study session not found");
+    }
+    if (session.user_id !== userId) {
+      throw AppError.forbidden("You can only update your own study session");
+    }
+    if (session.status === "completed" || session.status === "abandoned") {
+      throw AppError.badRequest("This study session has already ended");
+    }
+
+    const item = await flashcardRepository.findItemById(body.flashcardItemId);
+    if (!item || item.flashcard_set_id !== flashcardSetId || item.status !== "active") {
+      throw AppError.notFound("Flashcard item not found");
+    }
+
+    const latestReview = await flashcardRepository.findLatestReviewByUserAndItem(userId, body.flashcardItemId);
+    const schedule = buildReviewSchedule(
+      body.result,
+      latestReview?.new_ease_factor ?? item.ease_factor,
+      latestReview?.new_interval_days ?? item.interval_days
+    );
+
+    const currentSessionReview = await flashcardRepository.findSessionReviewByItem(sessionId, body.flashcardItemId);
+    let review;
+
+    const reviewPayload = {
+      userRating: schedule.userRating,
+      wasCorrect: schedule.wasCorrect,
+      timeToAnswerSeconds: body.timeToAnswerSeconds ?? 0,
+      previousEaseFactor: schedule.previousEaseFactor,
+      newEaseFactor: schedule.newEaseFactor,
+      previousIntervalDays: schedule.previousIntervalDays,
+      newIntervalDays: schedule.newIntervalDays,
+      nextReviewAtUtc: schedule.nextReviewAtUtc,
+      status: schedule.reviewStatus ?? "completed",
+    };
+
+    if (currentSessionReview) {
+      review = await flashcardRepository.updateStudyReview(currentSessionReview.review_id, {
+        ...reviewPayload,
+        updatedBy: userId,
+      });
+    } else {
+      review = await flashcardRepository.createStudyReview({
+        sessionId,
+        userId,
+        flashcardItemId: body.flashcardItemId,
+        ...reviewPayload,
+        createdBy: userId,
+      });
+    }
+
+    const updatedSession = await flashcardRepository.refreshStudySessionStats(sessionId, session.total_cards, userId);
+
+    return {
+      review: flashcardDto.reviewToResponse(review),
+      session: flashcardDto.sessionToResponse(updatedSession),
+      deckProgress: await getDeckProgress(userId, flashcardSetId),
+    };
+  },
+
+  async completeStudySession(flashcardSetId, sessionId, userId, body) {
+    if (userId == null) {
+      throw AppError.unauthorized("Authentication required to complete a study session.");
+    }
+
+    const session = await flashcardRepository.findStudySessionById(sessionId);
+    if (!session || session.flashcard_set_id !== flashcardSetId) {
+      throw AppError.notFound("Study session not found");
+    }
+    if (session.user_id !== userId) {
+      throw AppError.forbidden("You can only complete your own study session");
+    }
+
+    let finalizedSession = session;
+    if (session.status !== "completed" && session.status !== "abandoned") {
+      finalizedSession = await flashcardRepository.completeStudySession(sessionId, {
+        sessionDurationSeconds: body.sessionDurationSeconds ?? 0,
+        updatedBy: userId,
+        status: "completed",
+      });
+
+      if ((finalizedSession.cards_reviewed ?? 0) > 0) {
+        await flashcardRepository.incrementSetTimesStudied(flashcardSetId, userId);
+      }
+    }
+
+    return {
+      session: flashcardDto.sessionToResponse(finalizedSession),
+      deckProgress: await getDeckProgress(userId, flashcardSetId),
+    };
   },
 };
 
