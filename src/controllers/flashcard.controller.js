@@ -5,8 +5,6 @@ const flashcardController = {
   async getMySets(req, res, next) {
     try {
       const data = await flashcardService.getMySets(req.user?.userId, req.query);
-      console.log(data, "data");
-      
       return success(res, { message: "Flashcard sets retrieved successfully", data });
     } catch (err) {
       next(err);
@@ -53,6 +51,43 @@ const flashcardController = {
     try {
       const data = await flashcardService.getItems(req.params.setId, req.user?.userId);
       return success(res, { message: "Flashcard items retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async startStudySession(req, res, next) {
+    try {
+      const data = await flashcardService.startStudySession(req.params.setId, req.user?.userId);
+      return success(res, { statusCode: 201, message: "Flashcard study session started successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async submitStudyReview(req, res, next) {
+    try {
+      const data = await flashcardService.submitStudyReview(
+        req.params.setId,
+        req.params.sessionId,
+        req.user?.userId,
+        req.body
+      );
+      return success(res, { message: "Flashcard progress saved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async completeStudySession(req, res, next) {
+    try {
+      const data = await flashcardService.completeStudySession(
+        req.params.setId,
+        req.params.sessionId,
+        req.user?.userId,
+        req.body
+      );
+      return success(res, { message: "Flashcard study session completed successfully", data });
     } catch (err) {
       next(err);
     }

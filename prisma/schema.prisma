@@ -712,6 +712,7 @@ model mst_courses {
   cnt_videos               cnt_videos[]
   mst_chapters             mst_chapters[]
   mst_users                mst_users?                @relation(fields: [creator_id], references: [user_id], onUpdate: NoAction, map: "fk_subjects_creator")
+  mst_package_courses      mst_package_courses[]
   pmt_course_purchases     pmt_course_purchases[]
 
   @@index([course_code], map: "idx_subjects_code")
@@ -1206,16 +1207,16 @@ model mst_packages {
 model mst_package_courses {
   package_course_id String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   package_id        String       @db.Uuid
-  subject_id        String       @db.Uuid
+  course_id         String       @map("subject_id") @db.Uuid
   display_order     Int?         @default(0)
   created_by        String       @db.Uuid
   created_at_utc    DateTime     @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
   mst_packages      mst_packages @relation(fields: [package_id], references: [package_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_package_courses_package")
-  mst_subjects      mst_subjects @relation(fields: [subject_id], references: [subject_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_package_courses_subject")
+  mst_courses       mst_courses  @relation(fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_package_courses_subject")
 
-  @@unique([package_id, subject_id])
+  @@unique([package_id, course_id])
   @@index([package_id], map: "idx_package_courses_package")
-  @@index([subject_id], map: "idx_package_courses_subject")
+  @@index([course_id], map: "idx_package_courses_subject")
 }
 
 /// This enum is commented in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
