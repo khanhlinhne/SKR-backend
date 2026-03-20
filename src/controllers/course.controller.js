@@ -33,7 +33,7 @@ const courseController = {
 
   async updateCourse(req, res, next) {
     try {
-      const data = await courseService.updateCourse(req.params.id, req.user?.userId, req.body);
+      const data = await courseService.updateCourse(req.params.id, req.user?.userId, req.user?.roles, req.body);
       return success(res, { message: "Course updated successfully", data });
     } catch (err) {
       next(err);
@@ -42,7 +42,7 @@ const courseController = {
 
   async deleteCourse(req, res, next) {
     try {
-      const data = await courseService.deleteCourse(req.params.id, req.user?.userId);
+      const data = await courseService.deleteCourse(req.params.id, req.user?.userId, req.user?.roles);
       return success(res, { message: "Course deleted successfully", data });
     } catch (err) {
       next(err);

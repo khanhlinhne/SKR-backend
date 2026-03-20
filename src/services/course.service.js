@@ -30,8 +30,14 @@ const courseService = {
       ];
     }
 
-    if (query.status) {
-      where.status = query.status;
+    if (query.admin) {
+      // Admin: cho phép lọc theo status nếu muốn, không thì lấy tất cả
+      if (query.status) {
+        where.status = query.status;
+      }
+    } else {
+      // Người dùng công khai: chỉ thấy khóa học đã xuất bản
+      where.status = "published";
     }
 
     if (query.isFree !== undefined && query.isFree !== "") {
@@ -117,7 +123,7 @@ const courseService = {
     return courseDto.toDetail(full);
   },
 
-  async updateCourse(courseId, userId, body) {
+  async updateCourse(courseId, userId, roles, body) {
     if (!userId) {
       throw AppError.unauthorized("Authentication required to update a course.");
     }
@@ -127,7 +133,8 @@ const courseService = {
       throw AppError.notFound("Course not found");
     }
 
-    if (course.creator_id !== userId) {
+    const isAdmin = roles && roles.includes("admin");
+    if (!isAdmin && course.creator_id !== userId) {
       throw AppError.forbidden("You can only edit your own courses");
     }
 
@@ -147,7 +154,7 @@ const courseService = {
     return courseDto.toDetail(updated);
   },
 
-  async deleteCourse(courseId, userId) {
+  async deleteCourse(courseId, userId, roles) {
     if (!userId) {
       throw AppError.unauthorized("Authentication required to delete a course.");
     }
@@ -157,7 +164,8 @@ const courseService = {
       throw AppError.notFound("Course not found");
     }
 
-    if (course.creator_id !== userId) {
+    const isAdmin = roles && roles.includes("admin");
+    if (!isAdmin && course.creator_id !== userId) {
       throw AppError.forbidden("You can only delete your own courses");
     }
 

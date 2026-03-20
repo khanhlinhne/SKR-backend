@@ -90,7 +90,7 @@ const courseRepository = {
         course_preview_video_url: data.coursePreviewVideoUrl ?? null,
         display_order: data.displayOrder ?? 0,
         creator_id: data.creatorId,
-        is_free: data.isFree ?? true,
+        is_free: data.isFree ?? false,
         price_amount: data.priceAmount ?? 0,
         original_price: data.originalPrice ?? null,
         currency_code: data.currencyCode ?? "VND",
