@@ -7,6 +7,7 @@ const flashcardDto = require("../dtos/flashcard.dto");
 const VALID_VISIBILITY = ["public", "private", "premium_only", "unlisted"];
 const VALID_STATUS_SET = ["draft", "active", "archived"];
 const VALID_REVIEW_RESULTS = ["correct", "incorrect", "skip"];
+const PUBLIC_FLASHCARD_PREVIEW_LIMIT = 4;
 
 function normalizeOptionalId(value) {
   if (value == null || (typeof value === "string" && !value.trim())) return null;
@@ -31,6 +32,12 @@ function ensureSetReadable(set, userId) {
   if (!set) throw AppError.notFound("Flashcard set not found");
   if (set.creator_id !== userId && set.visibility === "private") {
     throw AppError.forbidden("You do not have access to this flashcard set");
+  }
+}
+
+function ensureSetPubliclyReadable(set) {
+  if (!set || set.visibility !== "public" || set.status !== "active") {
+    throw AppError.notFound("Flashcard set not found");
   }
 }
 
@@ -103,7 +110,67 @@ async function getDeckProgress(userId, flashcardSetId) {
   return progressMap.get(flashcardSetId) || { masteredCount: 0, dueToday: 0 };
 }
 
+function redactItemsForGuest(items = []) {
+  return items.map((item, index) => {
+    if (index < PUBLIC_FLASHCARD_PREVIEW_LIMIT) {
+      return {
+        ...item,
+        isLocked: false,
+      };
+    }
+
+    return {
+      ...item,
+      backText: "",
+      isLocked: true,
+    };
+  });
+}
+
 const flashcardService = {
+  async getPublicSets(query) {
+    const page = Math.max(parseInt(query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(query.limit, 10) || 6, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const { items, totalItems } = await flashcardRepository.findPublicSets({
+      courseId: normalizeOptionalId(query.courseId),
+      search: typeof query.search === "string" ? query.search.trim() : undefined,
+      skip,
+      take: limit,
+    });
+
+    const totalPages = Math.ceil(totalItems / limit);
+
+    return {
+      items: items.map(flashcardDto.setToListItem),
+      pagination: {
+        page,
+        limit,
+        totalItems,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+    };
+  },
+
+  async getPublicSetById(flashcardSetId, userId) {
+    const set = await flashcardRepository.findSetById(flashcardSetId);
+    ensureSetPubliclyReadable(set);
+
+    const deckProgress = userId ? await getDeckProgress(userId, flashcardSetId) : {};
+    const detail = flashcardDto.setToDetail({ ...set, ...deckProgress });
+    const items = userId ? detail.items : redactItemsForGuest(detail.items);
+
+    return {
+      ...detail,
+      items,
+      previewLimit: PUBLIC_FLASHCARD_PREVIEW_LIMIT,
+      requiresLoginForFullAccess: !userId,
+    };
+  },
+
   async getMySets(userId, query) {
     if (userId == null) {
       throw AppError.unauthorized("Authentication required to list flashcard sets.");

@@ -2,7 +2,7 @@ const { Router } = require("express");
 const userController = require("../controllers/user.controller");
 const { validate } = require("../middlewares/validate.middleware");
 const { authenticate, authorize } = require("../middlewares/auth.middleware");
-const { updateProfileRules, changePasswordRules, getAllUsersRules } = require("../validators/user.validator");
+const { createUserRules, updateUserStatusRules, updateProfileRules, changePasswordRules, getAllUsersRules } = require("../validators/user.validator");
 
 const router = Router();
 
@@ -12,6 +12,96 @@ const router = Router();
  *   - name: User
  *     description: User profile management
  */
+
+/**
+ * @swagger
+ * /api/user:
+ *   post:
+ *     tags: [User]
+ *     summary: Create a new user (Admin)
+ *     description: Admin creates a new user account with specified roles. Welcome email is sent automatically.
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: newuser@email.com
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: secret123
+ *               fullName:
+ *                 type: string
+ *                 example: Nguyen Van A
+ *               username:
+ *                 type: string
+ *                 example: nguyenvana
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+84912345678"
+ *               roles:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["Learner"]
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *       400:
+ *         description: Validation failed or email already exists
+ *       401:
+ *         description: Access token missing or invalid
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.post("/", authenticate, authorize("admin"), createUserRules, validate, userController.createUser);
+
+/**
+ * @swagger
+ * /api/user/{id}/status:
+ *   put:
+ *     tags: [User]
+ *     summary: Update user active status (Admin)
+ *     description: Ban or unban a user account.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [isActive]
+ *             properties:
+ *               isActive:
+ *                 type: boolean
+ *                 example: false
+ *     responses:
+ *       200:
+ *         description: User status updated
+ *       400:
+ *         description: Validation failed
+ *       401:
+ *         description: Access token missing or invalid
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.put("/:id/status", authenticate, authorize("admin"), updateUserStatusRules, validate, userController.updateUserStatus);
 
 /**
  * @swagger

@@ -2,6 +2,24 @@ const flashcardService = require("../services/flashcard.service");
 const { success } = require("../utils/response.util");
 
 const flashcardController = {
+  async getPublicSets(req, res, next) {
+    try {
+      const data = await flashcardService.getPublicSets(req.query);
+      return success(res, { message: "Public flashcard sets retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getPublicSetById(req, res, next) {
+    try {
+      const data = await flashcardService.getPublicSetById(req.params.id, req.user?.userId);
+      return success(res, { message: "Public flashcard set retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async getMySets(req, res, next) {
     try {
       const data = await flashcardService.getMySets(req.user?.userId, req.query);
