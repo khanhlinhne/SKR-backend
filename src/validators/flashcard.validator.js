@@ -64,6 +64,16 @@ const getMySetsRules = [
     .withMessage("visibility must be public, private, premium_only or unlisted"),
 ];
 
+const getPublicSetsRules = [
+  query("page").optional().isInt({ min: 1 }).withMessage("page must be a positive integer"),
+  query("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage("limit must be between 1 and 100"),
+  query("courseId").optional().isUUID().withMessage("courseId must be a valid UUID"),
+  query("search").optional().trim().isLength({ max: 255 }).withMessage("search is too long"),
+];
+
 const getItemsRules = [
   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
 ];
@@ -130,6 +140,7 @@ module.exports = {
   updateSetRules,
   setIdParamRules,
   getMySetsRules,
+  getPublicSetsRules,
   getItemsRules,
   startStudySessionRules,
   submitStudyReviewRules,

@@ -21,6 +21,45 @@ const flashcardRepository = {
     });
   },
 
+  async findPublicSets({ courseId, search, orderBy, skip, take }) {
+    const where = {
+      visibility: "public",
+      status: "active",
+      ...(courseId ? { course_id: courseId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { set_title: { contains: search, mode: "insensitive" } },
+              { set_description: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, totalItems] = await prisma.$transaction([
+      prisma.cnt_flashcards.findMany({
+        where,
+        orderBy: orderBy || [{ times_studied: "desc" }, { created_at_utc: "desc" }],
+        skip,
+        take,
+        include: {
+          _count: { select: { cnt_flashcard_items: true } },
+          mst_users: {
+            select: {
+              user_id: true,
+              full_name: true,
+              display_name: true,
+              avatar_url: true,
+            },
+          },
+        },
+      }),
+      prisma.cnt_flashcards.count({ where }),
+    ]);
+
+    return { items, totalItems };
+  },
+
   async findSetsByCreator(creatorId, { where = {}, orderBy, skip, take }) {
     const baseWhere = { creator_id: creatorId, ...where };
     const [items, totalItems] = await prisma.$transaction([

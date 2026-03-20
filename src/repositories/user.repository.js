@@ -101,6 +101,26 @@ const userRepository = {
     return { items, totalItems };
   },
 
+  async assignRoles(userId, roleIds, createdBy) {
+    // Deactivate existing roles first
+    await prisma.mst_user_roles.updateMany({
+      where: { user_id: userId, is_active: true },
+      data: { is_active: false, updated_by: createdBy, updated_at_utc: new Date() },
+    });
+
+    // Create new role assignments
+    const assignments = roleIds.map((roleId) => ({
+      user_id: userId,
+      role_id: roleId,
+      created_by: createdBy,
+      is_active: true,
+    }));
+
+    if (assignments.length > 0) {
+      await prisma.mst_user_roles.createMany({ data: assignments });
+    }
+  },
+
   async updateLastLogin(userId) {
     return prisma.mst_users.update({
       where: { user_id: userId },
