@@ -262,9 +262,9 @@ router.delete("/:id", authenticate, authorize("admin"), deletePackageRules, vali
  *           schema:
  *             type: object
  *             required:
- *               - subjectId
+ *               - courseId
  *             properties:
- *               subjectId:
+ *               courseId:
  *                 type: string
  *                 format: uuid
  *               displayOrder:
@@ -281,7 +281,7 @@ router.post("/:id/courses", authenticate, authorize("admin"), addCourseRules, va
 
 /**
  * @swagger
- * /api/packages/{id}/courses/{subjectId}:
+ * /api/packages/{id}/courses/{courseId}:
  *   delete:
  *     tags: [Package]
  *     summary: Remove a course (subject) from a package
@@ -295,7 +295,7 @@ router.post("/:id/courses", authenticate, authorize("admin"), addCourseRules, va
  *           type: string
  *           format: uuid
  *       - in: path
- *         name: subjectId
+ *         name: courseId
  *         required: true
  *         schema:
  *           type: string
@@ -306,6 +306,6 @@ router.post("/:id/courses", authenticate, authorize("admin"), addCourseRules, va
  *       404:
  *         description: Package or subject not found in package
  */
-router.delete("/:id/courses/:subjectId", authenticate, authorize("admin"), removeCourseRules, validate, packageController.removeCourse);
+router.delete("/:id/courses/:courseId", authenticate, authorize("admin"), removeCourseRules, validate, packageController.removeCourse);
 
 module.exports = router;

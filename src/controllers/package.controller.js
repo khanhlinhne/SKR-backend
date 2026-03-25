@@ -58,7 +58,7 @@ const packageController = {
 
   async removeCourse(req, res, next) {
     try {
-      const data = await packageService.removeCourseFromPackage(req.params.id, req.params.subjectId, req.user.userId);
+      const data = await packageService.removeCourseFromPackage(req.params.id, req.params.courseId, req.user.userId);
       return success(res, { message: "Course removed from package successfully", data });
     } catch (err) {
       next(err);

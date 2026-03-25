@@ -27,12 +27,12 @@ const packageRepository = {
         mst_package_courses: {
           orderBy: { display_order: "asc" },
           include: {
-            mst_subjects: {
+            mst_courses: {
               select: {
-                subject_id: true,
-                subject_code: true,
-                subject_name: true,
-                subject_icon_url: true,
+                course_id: true,
+                course_code: true,
+                course_name: true,
+                course_icon_url: true,
                 is_free: true,
                 price_amount: true,
                 total_chapters: true,
@@ -86,10 +86,10 @@ const packageRepository = {
     });
   },
 
-  async findPackageCourse(packageId, subjectId) {
+  async findPackageCourse(packageId, courseId) {
     return prisma.mst_package_courses.findUnique({
       where: {
-        package_id_subject_id: { package_id: packageId, subject_id: subjectId },
+        package_id_course_id: { package_id: packageId, course_id: courseId },
       },
     });
   },
@@ -108,10 +108,10 @@ const packageRepository = {
     return prisma.mst_package_courses.create({ data });
   },
 
-  async removeCourse(packageId, subjectId) {
+  async removeCourse(packageId, courseId) {
     return prisma.mst_package_courses.delete({
       where: {
-        package_id_subject_id: { package_id: packageId, subject_id: subjectId },
+        package_id_course_id: { package_id: packageId, course_id: courseId },
       },
     });
   },

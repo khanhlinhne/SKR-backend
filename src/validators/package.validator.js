@@ -135,9 +135,9 @@ const deletePackageRules = [
 const addCourseRules = [
   param("id")
     .isUUID().withMessage("Package ID must be a valid UUID"),
-  body("subjectId")
-    .notEmpty().withMessage("Subject ID is required")
-    .isUUID().withMessage("Subject ID must be a valid UUID"),
+  body("courseId")
+    .notEmpty().withMessage("Course ID is required")
+    .isUUID().withMessage("Course ID must be a valid UUID"),
   body("displayOrder")
     .optional()
     .isInt({ min: 0 }).withMessage("Display order must be a non-negative integer"),
@@ -146,8 +146,8 @@ const addCourseRules = [
 const removeCourseRules = [
   param("id")
     .isUUID().withMessage("Package ID must be a valid UUID"),
-  param("subjectId")
-    .isUUID().withMessage("Subject ID must be a valid UUID"),
+  param("courseId")
+    .isUUID().withMessage("Course ID must be a valid UUID"),
 ];
 
 module.exports = {

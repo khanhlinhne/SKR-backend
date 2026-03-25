@@ -27,18 +27,18 @@ function toDetail(pkg) {
     packageCourseId: pc.package_course_id,
     displayOrder: pc.display_order,
     addedAt: pc.created_at_utc,
-    course: pc.mst_subjects
+    course: pc.mst_courses
       ? {
-          subjectId: pc.mst_subjects.subject_id,
-          subjectCode: pc.mst_subjects.subject_code,
-          subjectName: pc.mst_subjects.subject_name,
-          subjectIconUrl: pc.mst_subjects.subject_icon_url,
-          isFree: pc.mst_subjects.is_free,
-          priceAmount: pc.mst_subjects.price_amount,
-          totalChapters: pc.mst_subjects.total_chapters,
-          totalLessons: pc.mst_subjects.total_lessons,
-          ratingAverage: pc.mst_subjects.rating_average,
-          status: pc.mst_subjects.status,
+          courseId: pc.mst_courses.course_id,
+          courseCode: pc.mst_courses.course_code,
+          courseName: pc.mst_courses.course_name,
+          courseIconUrl: pc.mst_courses.course_icon_url,
+          isFree: pc.mst_courses.is_free,
+          priceAmount: pc.mst_courses.price_amount,
+          totalChapters: pc.mst_courses.total_chapters,
+          totalLessons: pc.mst_courses.total_lessons,
+          ratingAverage: pc.mst_courses.rating_average,
+          status: pc.mst_courses.status,
         }
       : null,
   }));

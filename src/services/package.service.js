@@ -151,23 +151,23 @@ const packageService = {
       throw AppError.notFound("Package not found");
     }
 
-    const subject = await prisma.mst_subjects.findUnique({
-      where: { subject_id: data.subjectId },
+    const course = await prisma.mst_courses.findUnique({
+      where: { course_id: data.courseId },
     });
-    if (!subject || !subject.is_active) {
-      throw AppError.notFound("Subject not found");
+    if (!course || !course.is_active) {
+      throw AppError.notFound("Course not found");
     }
 
-    const existing = await packageRepository.findPackageCourse(packageId, data.subjectId);
+    const existing = await packageRepository.findPackageCourse(packageId, data.courseId);
     if (existing) {
-      throw AppError.conflict("This subject is already in the package");
+      throw AppError.conflict("This course is already in the package");
     }
 
     const maxOrder = await packageRepository.getMaxCourseOrder(packageId);
 
     await packageRepository.addCourse({
       package_id: packageId,
-      subject_id: data.subjectId,
+      course_id: data.courseId,
       display_order: data.displayOrder ?? maxOrder + 1,
       created_by: userId,
     });
@@ -178,18 +178,18 @@ const packageService = {
     return packageDto.toDetail(updated);
   },
 
-  async removeCourseFromPackage(packageId, subjectId, userId) {
+  async removeCourseFromPackage(packageId, courseId, userId) {
     const pkg = await packageRepository.findById(packageId);
     if (!pkg || !pkg.is_active) {
       throw AppError.notFound("Package not found");
     }
 
-    const existing = await packageRepository.findPackageCourse(packageId, subjectId);
+    const existing = await packageRepository.findPackageCourse(packageId, courseId);
     if (!existing) {
-      throw AppError.notFound("Subject not found in this package");
+      throw AppError.notFound("Course not found in this package");
     }
 
-    await packageRepository.removeCourse(packageId, subjectId);
+    await packageRepository.removeCourse(packageId, courseId);
     await packageRepository.updateStats(packageId);
 
     const updated = await packageRepository.findById(packageId);
