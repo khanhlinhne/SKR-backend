@@ -1,5 +1,7 @@
+const path = require("path");
 const AppError = require("../utils/AppError");
 const courseRepository = require("../repositories/course.repository");
+const userRepository = require("../repositories/user.repository");
 const courseDto = require("../dtos/course.dto");
 
 const ALLOWED_SORT_FIELDS = {
@@ -11,6 +13,55 @@ const ALLOWED_SORT_FIELDS = {
   purchaseCount: "purchase_count",
   ratingAverage: "rating_average",
 };
+
+const VALID_CONTENT_VISIBILITY = new Set([
+  "public",
+  "private",
+  "premium_only",
+  "unlisted",
+]);
+
+function normalizeOptionalText(value) {
+  if (typeof value !== "string") return value ?? undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function normalizeOptionalInteger(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeOptionalBigInt(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+
+  try {
+    return BigInt(value);
+  } catch (_error) {
+    return undefined;
+  }
+}
+
+function getFileNameFromUrl(fileUrl) {
+  if (!fileUrl || typeof fileUrl !== "string") return undefined;
+
+  const sanitizedUrl = fileUrl.split("#")[0].split("?")[0];
+  const fileName = sanitizedUrl.split("/").pop();
+
+  if (!fileName) return undefined;
+
+  try {
+    return decodeURIComponent(fileName);
+  } catch (_error) {
+    return fileName;
+  }
+}
+
+function getFileTypeFromName(fileName) {
+  const extension = path.extname(fileName || "").slice(1).toLowerCase();
+  return extension || undefined;
+}
 
 const courseService = {
   // ──────────────── COURSES ────────────────
@@ -93,15 +144,34 @@ const courseService = {
       throw AppError.unauthorized("Authentication required to create a course.");
     }
 
-    const existing = await courseRepository.findByCode(body.courseCode);
+    // Auto-generate courseCode if not provided
+    let courseCode = body.courseCode;
+    if (!courseCode) {
+      // Generate from course name: remove diacritics, replace spaces with hyphens, add random suffix
+      const baseName = (body.courseName || "COURSE")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d")
+        .replace(/Đ/g, "D")
+        .replace(/[^A-Za-z0-9\s]/g, "")
+        .trim()
+        .replace(/\s+/g, "-")
+        .toUpperCase()
+        .substring(0, 30);
+      const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      courseCode = `${baseName}-${suffix}`;
+    }
+
+    const existing = await courseRepository.findByCode(courseCode);
     if (existing) {
-      throw AppError.conflict(`Course code "${body.courseCode}" already exists`);
+      throw AppError.conflict(`Course code "${courseCode}" already exists`);
     }
 
     const course = await courseRepository.create({
-      courseCode: body.courseCode,
+      courseCode,
       courseName: body.courseName,
       courseDescription: body.courseDescription,
+      category: body.category,
       courseIconUrl: body.courseIconUrl,
       courseBannerUrl: body.courseBannerUrl,
       coursePreviewVideoUrl: body.coursePreviewVideoUrl,
@@ -403,6 +473,243 @@ const courseService = {
     await courseRepository.updateStats(courseId);
 
     return { deleted: true, lessonId };
+  },
+
+  // ──────────────── LESSON CONTENT ────────────────
+
+  async getLessonContent(courseId, chapterId, lessonId) {
+    const course = await courseRepository.findById(courseId);
+    if (!course || !course.is_active) {
+      throw AppError.notFound("Course not found");
+    }
+
+    const chapter = await courseRepository.findChapterById(chapterId);
+    if (!chapter || chapter.course_id !== courseId || !chapter.is_active) {
+      throw AppError.notFound("Chapter not found in this course");
+    }
+
+    const lesson = await courseRepository.findLessonByIdWithContent(lessonId);
+    if (!lesson || lesson.chapter_id !== chapterId || lesson.is_active === false) {
+      throw AppError.notFound("Lesson not found in this chapter");
+    }
+
+    return courseDto.toLessonDetail(lesson);
+  },
+
+  async addVideo(courseId, chapterId, lessonId, userId, body) {
+    if (!userId) throw AppError.unauthorized("Authentication required.");
+
+    const course = await courseRepository.findById(courseId);
+    if (!course || !course.is_active) throw AppError.notFound("Course not found");
+    if (course.creator_id !== userId) throw AppError.forbidden("Not authorized");
+
+    const chapter = await courseRepository.findChapterById(chapterId);
+    if (!chapter || chapter.course_id !== courseId || !chapter.is_active) {
+      throw AppError.notFound("Chapter not found");
+    }
+
+    const lesson = await courseRepository.findLessonById(lessonId);
+    if (!lesson || lesson.chapter_id !== chapterId || lesson.is_active === false) {
+      throw AppError.notFound("Lesson not found");
+    }
+
+    const video = await courseRepository.createVideo({
+      videoTitle: body.videoTitle,
+      videoDescription: body.videoDescription,
+      videoUrl: body.videoUrl,
+      videoThumbnailUrl: body.videoThumbnailUrl,
+      videoDurationSeconds: body.videoDurationSeconds,
+      videoFormat: body.videoFormat,
+      fileSizeBytes: body.fileSizeBytes,
+      uploaderId: userId,
+      lessonId,
+      courseId,
+      visibility: body.visibility,
+      status: "active",
+      createdBy: userId,
+    });
+
+    await courseRepository.updateStats(courseId);
+    return courseDto.toVideoItem(video);
+  },
+
+  async deleteVideo(courseId, chapterId, lessonId, videoId, userId) {
+    if (!userId) throw AppError.unauthorized("Authentication required.");
+
+    const course = await courseRepository.findById(courseId);
+    if (!course || !course.is_active) throw AppError.notFound("Course not found");
+    if (course.creator_id !== userId) throw AppError.forbidden("Not authorized");
+
+    const video = await courseRepository.findVideoById(videoId);
+    if (!video || video.lesson_id !== lessonId) throw AppError.notFound("Video not found");
+
+    await courseRepository.deleteVideo(videoId, userId);
+    await courseRepository.updateStats(courseId);
+    return { deleted: true, videoId };
+  },
+
+  async addDocument(courseId, chapterId, lessonId, userId, file, body = {}) {
+    if (!userId) throw AppError.unauthorized("Authentication required.");
+
+    const course = await courseRepository.findById(courseId);
+    if (!course || !course.is_active) throw AppError.notFound("Course not found");
+    if (course.creator_id !== userId) throw AppError.forbidden("Not authorized");
+
+    const chapter = await courseRepository.findChapterById(chapterId);
+    if (!chapter || chapter.course_id !== courseId || !chapter.is_active) {
+      throw AppError.notFound("Chapter not found");
+    }
+
+    const lesson = await courseRepository.findLessonById(lessonId);
+    if (!lesson || lesson.chapter_id !== chapterId || lesson.is_active === false) {
+      throw AppError.notFound("Lesson not found");
+    }
+
+    const visibility = normalizeOptionalText(body.visibility);
+    if (visibility && !VALID_CONTENT_VISIBILITY.has(visibility)) {
+      throw AppError.badRequest("Invalid visibility");
+    }
+
+    const requestTitle = normalizeOptionalText(body.documentTitle);
+    const requestDescription = normalizeOptionalText(body.documentDescription);
+    const requestFileUrl = normalizeOptionalText(body.fileUrl);
+    const requestFileName = normalizeOptionalText(body.fileName);
+    const requestFileType = normalizeOptionalText(body.fileType)?.toLowerCase();
+
+    const resolvedFileUrl = file ? `/uploads/documents/${file.filename}` : requestFileUrl;
+    if (!resolvedFileUrl) {
+      throw AppError.badRequest("Document file or fileUrl is required");
+    }
+
+    const resolvedFileName =
+      file?.originalname || requestFileName || getFileNameFromUrl(resolvedFileUrl);
+    if (!resolvedFileName) {
+      throw AppError.badRequest("fileName is required");
+    }
+
+    const resolvedTitle = requestTitle || resolvedFileName;
+    const resolvedFileType =
+      getFileTypeFromName(file?.originalname || file?.filename || resolvedFileName) ||
+      requestFileType ||
+      null;
+
+    const doc = await courseRepository.createDocumentRecord({
+      documentTitle: resolvedTitle,
+      documentDescription: requestDescription,
+      fileName: resolvedFileName,
+      fileUrl: resolvedFileUrl,
+      fileType: resolvedFileType,
+      fileSizeBytes:
+        file?.size != null ? BigInt(file.size) : normalizeOptionalBigInt(body.fileSizeBytes),
+      pageCount: normalizeOptionalInteger(body.pageCount),
+      uploaderId: userId,
+      lessonId,
+      courseId,
+      visibility,
+      status: "active",
+      createdBy: userId,
+    });
+
+    await courseRepository.updateStats(courseId);
+    return courseDto.toDocumentItem(doc);
+  },
+
+  async deleteDocument(courseId, chapterId, lessonId, documentId, userId) {
+    if (!userId) throw AppError.unauthorized("Authentication required.");
+
+    const course = await courseRepository.findById(courseId);
+    if (!course || !course.is_active) throw AppError.notFound("Course not found");
+    if (course.creator_id !== userId) throw AppError.forbidden("Not authorized");
+
+    const doc = await courseRepository.findDocumentById(documentId);
+    if (!doc || doc.lesson_id !== lessonId) throw AppError.notFound("Document not found");
+
+    await courseRepository.deleteDocument(documentId, userId);
+    await courseRepository.updateStats(courseId);
+    return { deleted: true, documentId };
+  },
+
+  async addQuestion(courseId, chapterId, lessonId, userId, body) {
+    if (!userId) throw AppError.unauthorized("Authentication required.");
+
+    const course = await courseRepository.findById(courseId);
+    if (!course || !course.is_active) throw AppError.notFound("Course not found");
+    if (course.creator_id !== userId) throw AppError.forbidden("Not authorized");
+
+    const chapter = await courseRepository.findChapterById(chapterId);
+    if (!chapter || chapter.course_id !== courseId || !chapter.is_active) {
+      throw AppError.notFound("Chapter not found");
+    }
+
+    const lesson = await courseRepository.findLessonById(lessonId);
+    if (!lesson || lesson.chapter_id !== chapterId || lesson.is_active === false) {
+      throw AppError.notFound("Lesson not found");
+    }
+
+    const question = await courseRepository.createQuestion({
+      questionType: body.questionType || "multiple_choice",
+      questionText: body.questionText,
+      questionExplanation: body.questionExplanation,
+      difficultyLevel: body.difficultyLevel,
+      points: body.points,
+      timeLimitSeconds: body.timeLimitSeconds,
+      creatorId: userId,
+      lessonId,
+      courseId,
+      visibility: body.visibility,
+      status: "active",
+      createdBy: userId,
+      options: body.options,
+    });
+
+    await courseRepository.updateStats(courseId);
+    return courseDto.toQuestionItem(question);
+  },
+
+  async deleteQuestion(courseId, chapterId, lessonId, questionId, userId) {
+    if (!userId) throw AppError.unauthorized("Authentication required.");
+
+    const course = await courseRepository.findById(courseId);
+    if (!course || !course.is_active) throw AppError.notFound("Course not found");
+    if (course.creator_id !== userId) throw AppError.forbidden("Not authorized");
+
+    const question = await courseRepository.findQuestionById(questionId);
+    if (!question || question.lesson_id !== lessonId) throw AppError.notFound("Question not found");
+
+    await courseRepository.deleteQuestion(questionId, userId);
+    await courseRepository.updateStats(courseId);
+    return { deleted: true, questionId };
+  },
+
+  // ──────────────── ASSIGN EXPERT ────────────────
+
+  async assignExpert(courseId, expertId, adminUserId) {
+    if (!adminUserId) {
+      throw AppError.unauthorized("Authentication required to assign expert.");
+    }
+
+    const course = await courseRepository.findById(courseId);
+    if (!course || !course.is_active) {
+      throw AppError.notFound("Course not found");
+    }
+
+    // Validate expert exists and has creator role
+    const expert = await userRepository.findByIdWithRoles(expertId);
+    if (!expert || !expert.is_active) {
+      throw AppError.notFound("Expert not found");
+    }
+
+    const hasCreatorRole = expert.mst_user_roles?.some(
+      (ur) => ur.is_active && ur.mst_roles?.role_code === "creator"
+    );
+    if (!hasCreatorRole) {
+      throw AppError.badRequest("Selected user does not have the creator/expert role");
+    }
+
+    await courseRepository.assignCreator(courseId, expertId, adminUserId);
+
+    const updated = await courseRepository.findById(courseId);
+    return courseDto.toDetail(updated);
   },
 };
 

@@ -4,6 +4,7 @@ function toListItem(course) {
     courseCode: course.course_code,
     courseName: course.course_name,
     courseDescription: course.course_description,
+    category: course.category,
     courseIconUrl: course.course_icon_url,
     courseBannerUrl: course.course_banner_url,
     displayOrder: course.display_order,
@@ -24,11 +25,11 @@ function toListItem(course) {
     publishedAt: course.published_at_utc,
     creator: course.mst_users
       ? {
-          userId: course.mst_users.user_id,
-          fullName: course.mst_users.full_name,
-          displayName: course.mst_users.display_name,
-          avatarUrl: course.mst_users.avatar_url,
-        }
+        userId: course.mst_users.user_id,
+        fullName: course.mst_users.full_name,
+        displayName: course.mst_users.display_name,
+        avatarUrl: course.mst_users.avatar_url,
+      }
       : null,
   };
 }
@@ -51,6 +52,7 @@ function toDetail(course) {
     courseCode: course.course_code,
     courseName: course.course_name,
     courseDescription: course.course_description,
+    category: course.category,
     courseIconUrl: course.course_icon_url,
     courseBannerUrl: course.course_banner_url,
     coursePreviewVideoUrl: course.course_preview_video_url,
@@ -74,11 +76,11 @@ function toDetail(course) {
     publishedAt: course.published_at_utc,
     creator: course.mst_users
       ? {
-          userId: course.mst_users.user_id,
-          fullName: course.mst_users.full_name,
-          displayName: course.mst_users.display_name,
-          avatarUrl: course.mst_users.avatar_url,
-        }
+        userId: course.mst_users.user_id,
+        fullName: course.mst_users.full_name,
+        displayName: course.mst_users.display_name,
+        avatarUrl: course.mst_users.avatar_url,
+      }
       : null,
     chapters,
   };
@@ -110,4 +112,80 @@ function toLessonItem(lesson) {
   };
 }
 
-module.exports = { toListItem, toDetail, toChapterItem, toLessonItem };
+function toLessonDetail(lesson) {
+  return {
+    lessonId: lesson.lesson_id,
+    lessonCode: lesson.lesson_code,
+    lessonName: lesson.lesson_name,
+    lessonDescription: lesson.lesson_description,
+    lessonNumber: lesson.lesson_number,
+    displayOrder: lesson.display_order,
+    learningObjectives: lesson.learning_objectives,
+    estimatedDurationMinutes: lesson.estimated_duration_minutes,
+    videos: (lesson.cnt_videos || []).map(toVideoItem),
+    documents: (lesson.cnt_documents || []).map(toDocumentItem),
+    questions: (lesson.cnt_questions || []).map(toQuestionItem),
+  };
+}
+
+function toVideoItem(v) {
+  return {
+    videoId: v.video_id,
+    videoTitle: v.video_title,
+    videoDescription: v.video_description,
+    videoUrl: v.video_url,
+    videoThumbnailUrl: v.video_thumbnail_url,
+    videoDurationSeconds: v.video_duration_seconds,
+    videoFormat: v.video_format,
+    fileSizeBytes: v.file_size_bytes ? Number(v.file_size_bytes) : null,
+    status: v.status,
+    createdAt: v.created_at_utc,
+  };
+}
+
+function toDocumentItem(d) {
+  return {
+    documentId: d.document_id,
+    documentTitle: d.document_title,
+    documentDescription: d.document_description,
+    fileName: d.file_name,
+    fileUrl: d.file_url,
+    fileType: d.file_type,
+    fileSizeBytes: d.file_size_bytes ? Number(d.file_size_bytes) : null,
+    pageCount: d.page_count,
+    status: d.status,
+    createdAt: d.created_at_utc,
+  };
+}
+
+function toQuestionItem(q) {
+  return {
+    questionId: q.question_id,
+    questionType: q.question_type,
+    questionText: q.question_text,
+    questionExplanation: q.question_explanation,
+    difficultyLevel: q.difficulty_level,
+    points: q.points ? Number(q.points) : 1,
+    timeLimitSeconds: q.time_limit_seconds,
+    status: q.status,
+    createdAt: q.created_at_utc,
+    options: (q.cnt_question_options || []).map((o) => ({
+      optionId: o.option_id,
+      optionText: o.option_text,
+      optionOrder: o.option_order,
+      isCorrect: o.is_correct,
+      optionExplanation: o.option_explanation,
+    })),
+  };
+}
+
+module.exports = {
+  toListItem,
+  toDetail,
+  toChapterItem,
+  toLessonItem,
+  toLessonDetail,
+  toVideoItem,
+  toDocumentItem,
+  toQuestionItem,
+};

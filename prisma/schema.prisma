@@ -676,6 +676,7 @@ model mst_courses {
   course_code              String                    @unique @map("subject_code") @db.VarChar(50)
   course_name              String                    @map("subject_name") @db.VarChar(255)
   course_description       String?                   @map("subject_description")
+  category                 String?                   @db.VarChar(100)
   course_icon_url          String?                   @map("subject_icon_url")
   course_banner_url        String?                   @map("subject_banner_url")
   course_preview_video_url String?                   @map("subject_preview_video_url")
