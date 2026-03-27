@@ -1,7 +1,13 @@
+const path = require("path");
 const AppError = require("../utils/AppError");
 const documentRepository = require("../repositories/document.repository");
 
 const VALID_VISIBILITY = ["public", "private", "premium_only", "unlisted"];
+
+function getFileTypeFromName(fileName) {
+  const extension = path.extname(fileName || "").slice(1).toLowerCase();
+  return extension || undefined;
+}
 
 function toListItem(doc) {
   return {
@@ -45,13 +51,14 @@ const documentService = {
     }
 
     const fileUrl = `/uploads/documents/${file.filename}`;
+    const fileName = file.originalname || file.filename;
 
     const doc = await documentRepository.create({
       documentTitle: body.documentTitle || file.originalname || file.filename,
       documentDescription: body.documentDescription,
-      fileName: file.originalname || file.filename,
+      fileName,
       fileUrl,
-      fileType: file.mimetype,
+      fileType: getFileTypeFromName(fileName) || null,
       fileSizeBytes: file.size != null ? BigInt(file.size) : null,
       uploaderId: userId,
       lessonId: body.lessonId,
