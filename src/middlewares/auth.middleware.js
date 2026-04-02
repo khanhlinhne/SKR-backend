@@ -22,6 +22,25 @@ function authenticate(req, _res, next) {
   }
 }
 
+function authenticateOptional(req, _res, next) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    req.user = undefined;
+    return next();
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    req.user = verifyAccessToken(token);
+  } catch (_err) {
+    req.user = undefined;
+  }
+
+  return next();
+}
+
 /**
  * Role-based authorization middleware.
  * Must be used after `authenticate`.
@@ -49,4 +68,4 @@ function authorize(...allowedRoles) {
   };
 }
 
-module.exports = { authenticate, authorize };
+module.exports = { authenticate, authenticateOptional, authorize };
