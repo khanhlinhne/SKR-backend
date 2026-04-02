@@ -10,6 +10,8 @@ const ALLOWED_DOCUMENT_MIME_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
   "application/msword", // .doc
+  "application/vnd.ms-powerpoint", // .ppt
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
   "application/vnd.oasis.opendocument.text", // .odt
   "text/plain",
 ];
@@ -36,7 +38,7 @@ function documentFileFilter(_req, file, cb) {
   if (!ALLOWED_DOCUMENT_MIME_TYPES.includes(file.mimetype)) {
     return cb(
       AppError.badRequest(
-        "Only document files are allowed (PDF, DOC, DOCX, ODT, TXT)"
+        "Only document files are allowed (PDF, DOC, DOCX, PPT, PPTX, ODT, TXT)"
       )
     );
   }
@@ -66,6 +68,8 @@ function getExtensionByMime(mimetype) {
     "application/pdf": ".pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "application/msword": ".doc",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
     "application/vnd.oasis.opendocument.text": ".odt",
     "text/plain": ".txt",
   };

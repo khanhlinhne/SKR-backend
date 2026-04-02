@@ -12,9 +12,6 @@ const { timezoneConverter } = require("./middlewares/timezone.middleware");
 
 const app = express();
 
-// Serve uploaded documents (PDF, DOCX, etc.) at /uploads/documents
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -42,6 +39,11 @@ app.use(
     credentials: true,
   })
 );
+
+// Serve uploaded documents (PDF, DOCX, etc.) at /uploads/documents
+// Placed AFTER cors() so cross-origin fetches from the frontend receive proper CORS headers
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(timezoneConverter);

@@ -8,6 +8,9 @@ const {
   setIdParamRules,
   getMySetsRules,
   getItemsRules,
+  startStudySessionRules,
+  submitStudyReviewRules,
+  completeStudySessionRules,
   itemIdParamRules,
   createItemRules,
   updateItemRules,
@@ -29,7 +32,7 @@ router.use(authenticate);
  * /api/flashcard-sets:
  *   get:
  *     tags: [Flashcard]
- *     summary: Get my flashcard sets
+ *     summary: Get accessible flashcard sets
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -80,11 +83,11 @@ router.use(authenticate);
  *                 format: uuid
  *                 nullable: true
  *                 description: Must exist in mst_lessons. Omit or null to leave unset.
- *               subjectId:
+ *               courseId:
  *                 type: string
  *                 format: uuid
  *                 nullable: true
- *                 description: Must exist in mst_subjects. Omit or null to leave unset.
+ *                 description: Must exist in mst_courses. Omit or null to leave unset.
  *               visibility:
  *                 type: string
  *                 enum: [public, private, premium_only, unlisted]
@@ -106,6 +109,25 @@ router.use(authenticate);
  */
 router.get("/", getMySetsRules, validate, flashcardController.getMySets);
 router.post("/", createSetRules, validate, flashcardController.createSet);
+
+router.post(
+  "/:setId/study-sessions",
+  startStudySessionRules,
+  validate,
+  flashcardController.startStudySession
+);
+router.post(
+  "/:setId/study-sessions/:sessionId/reviews",
+  submitStudyReviewRules,
+  validate,
+  flashcardController.submitStudyReview
+);
+router.post(
+  "/:setId/study-sessions/:sessionId/complete",
+  completeStudySessionRules,
+  validate,
+  flashcardController.completeStudySession
+);
 
 /**
  * @swagger
@@ -145,7 +167,7 @@ router.post("/", createSetRules, validate, flashcardController.createSet);
  *               setDescription: { type: string, maxLength: 2000 }
  *               setCoverImageUrl: { type: string, format: uri }
  *               lessonId: { type: string, format: uuid }
- *               subjectId: { type: string, format: uuid }
+ *               courseId: { type: string, format: uuid }
  *               visibility: { type: string, enum: [public, private, premium_only, unlisted] }
  *               tags: { type: array, items: { type: string } }
  *               status: { type: string, enum: [draft, active, archived] }

@@ -2,17 +2,21 @@ const { Router } = require("express");
 const authRoutes = require("./auth.routes");
 const userRoutes = require("./user.routes");
 const uploadRoutes = require("./upload.routes");
-const subjectRoutes = require("./subject.routes");
+const courseRoutes = require("./course.routes");
 const flashcardRoutes = require("./flashcard.routes");
+const flashcardPublicRoutes = require("./flashcard-public.routes");
 const documentRoutes = require("./document.routes");
+const enrollmentRoutes = require("./enrollment.routes");
 
 const router = Router();
 
 router.use("/auth", authRoutes);
 router.use("/user", userRoutes);
 router.use("/upload", uploadRoutes);
-router.use("/subjects", subjectRoutes);
+router.use("/courses", courseRoutes);
+router.use("/public/flashcard-sets", flashcardPublicRoutes);
 router.use("/flashcard-sets", flashcardRoutes);
 router.use("/documents", documentRoutes);
+router.use("/enrollments", enrollmentRoutes);
 
 module.exports = router;
