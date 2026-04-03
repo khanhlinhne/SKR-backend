@@ -826,6 +826,7 @@ model mst_users {
   lrn_test_submissions_lrn_test_submissions_user_idTomst_users           lrn_test_submissions[]    @relation("lrn_test_submissions_user_idTomst_users")
   lrn_video_progress                                                     lrn_video_progress[]
   mst_courses                                                            mst_courses[]
+  expert_profile                                                         mst_experts?               @relation("user_expert_profile")
   mst_user_roles                                                         mst_user_roles[]
   pmt_coupon_usages                                                      pmt_coupon_usages[]
   pmt_coupons                                                            pmt_coupons[]
@@ -841,6 +842,29 @@ model mst_users {
   @@index([created_at_utc(sort: Desc)], map: "idx_users_created_at")
   @@index([email], map: "idx_users_email")
   @@index([username], map: "idx_users_username")
+}
+
+/// Expert profile: extends a user account with public-facing expertise metadata (subject experts).
+model mst_experts {
+  expert_id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id             String    @unique @db.Uuid
+  headline            String?   @db.VarChar(255)
+  expertise_summary   String?
+  /// JSON array of course (subject) UUIDs this expert specializes in
+  subject_course_ids  Json?     @map("subject_ids")
+  display_order       Int?      @default(0)
+  status              String?   @default("active") @db.VarChar(50)
+  created_by          String    @db.Uuid
+  created_at_utc      DateTime  @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by          String?   @db.Uuid
+  updated_at_utc      DateTime? @db.Timestamp(6)
+  is_active           Boolean?  @default(true)
+  mst_users           mst_users @relation("user_expert_profile", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_experts_user")
+
+  @@index([status], map: "idx_experts_status")
+  @@index([display_order], map: "idx_experts_display_order")
+  @@index([created_at_utc(sort: Desc)], map: "idx_experts_created_at")
+  @@map("mst_experts")
 }
 
 model pmt_coupon_usages {

@@ -9,6 +9,7 @@ const flashcardRoutes = require("./flashcard.routes");
 const flashcardPublicRoutes = require("./flashcard-public.routes");
 const documentRoutes = require("./document.routes");
 const enrollmentRoutes = require("./enrollment.routes");
+const expertRoutes = require("./expert.routes");
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use("/public/flashcard-sets", flashcardPublicRoutes);
 router.use("/flashcard-sets", flashcardRoutes);
 router.use("/documents", documentRoutes);
 router.use("/enrollments", enrollmentRoutes);
+router.use("/experts", expertRoutes);
 
 module.exports = router;
