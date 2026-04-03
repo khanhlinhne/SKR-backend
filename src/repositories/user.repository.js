@@ -48,6 +48,7 @@ const userRepository = {
         full_name: data.fullName || null,
         display_name: data.displayName || null,
         avatar_url: data.avatarUrl || null,
+        phone_number: data.phoneNumber ?? null,
         timezone_offset: data.timezoneOffset ?? 7,
         email_verified: data.emailVerified || false,
         created_by: data.createdBy || "00000000-0000-0000-0000-000000000000",
@@ -64,12 +65,12 @@ const userRepository = {
     return user;
   },
 
-  async update(userId, data) {
+  async update(userId, data, updatedByUserId) {
     return prisma.mst_users.update({
       where: { user_id: userId },
       data: {
         ...data,
-        updated_by: userId,
+        updated_by: updatedByUserId ?? userId,
         updated_at_utc: new Date(),
       },
     });

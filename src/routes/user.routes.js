@@ -2,7 +2,15 @@ const { Router } = require("express");
 const userController = require("../controllers/user.controller");
 const { validate } = require("../middlewares/validate.middleware");
 const { authenticate, authorize } = require("../middlewares/auth.middleware");
-const { createUserRules, updateUserStatusRules, updateProfileRules, changePasswordRules, getAllUsersRules } = require("../validators/user.validator");
+const {
+  createUserRules,
+  updateUserStatusRules,
+  updateProfileRules,
+  changePasswordRules,
+  getAllUsersRules,
+  adminUserIdParamRules,
+  adminUpdateUserRules,
+} = require("../validators/user.validator");
 
 const router = Router();
 
@@ -303,5 +311,90 @@ router.put("/profile", authenticate, updateProfileRules, validate, userControlle
  *         description: Access token missing or invalid
  */
 router.post("/change-password", authenticate, changePasswordRules, validate, userController.changePassword);
+
+/**
+ * @swagger
+ * /api/user/{id}:
+ *   get:
+ *     tags: [User]
+ *     summary: Get user by ID (Admin)
+ *     description: Full profile including roles for a single user.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: User retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: User not found
+ *   patch:
+ *     tags: [User]
+ *     summary: Update user by ID (Admin)
+ *     description: Update profile fields and/or roles. Omitted fields are unchanged.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email: { type: string, format: email }
+ *               username: { type: string }
+ *               fullName: { type: string }
+ *               phoneNumber: { type: string }
+ *               dateOfBirth: { type: string, format: date }
+ *               bio: { type: string }
+ *               avatarUrl: { type: string, format: uri }
+ *               timezoneOffset: { type: integer }
+ *               emailVerified: { type: boolean }
+ *               roles:
+ *                 type: array
+ *                 items: { type: string }
+ *                 description: Role codes (replaces active role assignments when provided)
+ *     responses:
+ *       200:
+ *         description: User updated successfully
+ *       400:
+ *         description: Validation failed
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Email or username conflict
+ */
+router.get(
+  "/:id",
+  authenticate,
+  authorize("admin"),
+  adminUserIdParamRules,
+  validate,
+  userController.getUserByIdForAdmin
+);
+router.patch(
+  "/:id",
+  authenticate,
+  authorize("admin"),
+  adminUserIdParamRules,
+  adminUpdateUserRules,
+  validate,
+  userController.updateUserByAdmin
+);
 
 module.exports = router;
