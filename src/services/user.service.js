@@ -85,13 +85,81 @@ const userService = {
     return userDto.toAdminListItem(userWithRoles);
   },
 
-  async updateUserStatus(userId, { isActive }) {
+  async updateUserStatus(userId, { isActive }, adminId) {
     const user = await userRepository.findById(userId);
     if (!user) {
       throw AppError.notFound("User not found");
     }
-    await userRepository.update(userId, { is_active: isActive });
+    await userRepository.update(userId, { is_active: isActive }, adminId);
     return { message: isActive ? "Tai khoan da duoc mo khoa" : "Tai khoan da bi khoa" };
+  },
+
+  async getUserByIdForAdmin(userId) {
+    const user = await userRepository.findByIdWithRoles(userId);
+    if (!user) {
+      throw AppError.notFound("User not found");
+    }
+    return userDto.toProfileResponse(user);
+  },
+
+  async updateUserByAdmin(targetUserId, body, adminId) {
+    const existing = await userRepository.findById(targetUserId);
+    if (!existing) {
+      throw AppError.notFound("User not found");
+    }
+
+    if (body.email !== undefined && body.email !== existing.email) {
+      const byEmail = await userRepository.findByEmail(body.email);
+      if (byEmail && byEmail.user_id !== targetUserId) {
+        throw AppError.conflict("Email already exists");
+      }
+    }
+
+    if (body.username !== undefined) {
+      const byUsername = await userRepository.findByUsername(body.username);
+      if (byUsername && byUsername.user_id !== targetUserId) {
+        throw AppError.conflict("Username already taken");
+      }
+    }
+
+    const updateData = {};
+
+    if (body.email !== undefined) updateData.email = body.email;
+    if (body.username !== undefined) updateData.username = body.username;
+    if (body.phoneNumber !== undefined) updateData.phone_number = body.phoneNumber;
+    if (body.bio !== undefined) updateData.bio = body.bio;
+    if (body.avatarUrl !== undefined) updateData.avatar_url = body.avatarUrl;
+    if (body.timezoneOffset !== undefined) updateData.timezone_offset = body.timezoneOffset;
+    if (body.emailVerified !== undefined) updateData.email_verified = body.emailVerified;
+
+    if (body.fullName !== undefined) {
+      updateData.full_name = body.fullName;
+      const parts = body.fullName.trim().split(/\s+/);
+      updateData.display_name = parts[parts.length - 1] || body.fullName;
+    }
+
+    if (body.dateOfBirth !== undefined) {
+      updateData.date_of_birth = body.dateOfBirth ? new Date(body.dateOfBirth) : null;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await userRepository.update(targetUserId, updateData, adminId);
+    }
+
+    if (body.roles !== undefined && Array.isArray(body.roles)) {
+      let roleIds = [];
+      if (body.roles.length > 0) {
+        const foundRoles = await roleRepository.findByCodes(body.roles);
+        if (foundRoles.length === 0) {
+          throw AppError.badRequest("No valid roles found");
+        }
+        roleIds = foundRoles.map((r) => r.role_id);
+      }
+      await userRepository.assignRoles(targetUserId, roleIds, adminId);
+    }
+
+    const userWithRoles = await userRepository.findByIdWithRoles(targetUserId);
+    return userDto.toProfileResponse(userWithRoles);
   },
 
   async getAllUsers(query) {
