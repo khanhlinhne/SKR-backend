@@ -1,6 +1,7 @@
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 const AppError = require("../utils/AppError");
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
@@ -17,7 +18,29 @@ const ALLOWED_DOCUMENT_MIME_TYPES = [
 ];
 const MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
 
-const UPLOAD_DOCUMENTS_DIR = path.join(process.cwd(), "uploads", "documents");
+/** Writable on Vercel serverless; local dev uses project ./uploads/documents */
+function resolveUploadDocumentsDir() {
+  if (process.env.UPLOAD_DOCUMENTS_DIR) {
+    return path.resolve(process.env.UPLOAD_DOCUMENTS_DIR);
+  }
+  if (process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return path.join(os.tmpdir(), "skr-backend", "uploads", "documents");
+  }
+  return path.join(process.cwd(), "uploads", "documents");
+}
+
+const UPLOAD_DOCUMENTS_DIR = resolveUploadDocumentsDir();
+/** Parent of `documents` — use for `express.static("/uploads", ...)` so URLs match */
+const UPLOADS_BASE_DIR = path.dirname(UPLOAD_DOCUMENTS_DIR);
+
+try {
+  if (!fs.existsSync(UPLOAD_DOCUMENTS_DIR)) {
+    fs.mkdirSync(UPLOAD_DOCUMENTS_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.error("[upload.middleware] Failed to create UPLOAD_DOCUMENTS_DIR:", UPLOAD_DOCUMENTS_DIR, err);
+  throw err;
+}
 
 const storage = multer.memoryStorage();
 
@@ -43,10 +66,6 @@ function documentFileFilter(_req, file, cb) {
     );
   }
   cb(null, true);
-}
-
-if (!fs.existsSync(UPLOAD_DOCUMENTS_DIR)) {
-  fs.mkdirSync(UPLOAD_DOCUMENTS_DIR, { recursive: true });
 }
 
 const documentStorage = multer.diskStorage({
@@ -108,4 +127,5 @@ module.exports = {
   handleMulterError,
   handleDocumentMulterError,
   UPLOAD_DOCUMENTS_DIR,
+  UPLOADS_BASE_DIR,
 };

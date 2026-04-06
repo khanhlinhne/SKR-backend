@@ -1,5 +1,4 @@
 const express = require("express");
-const path = require("path");
 const cors = require("cors");
 const morgan = require("morgan");
 const passport = require("passport");
@@ -9,6 +8,7 @@ const swaggerSpec = require("./config/swagger");
 const routes = require("./routes");
 const { errorHandler, notFoundHandler } = require("./middlewares/error.middleware");
 const { timezoneConverter } = require("./middlewares/timezone.middleware");
+const { UPLOADS_BASE_DIR } = require("./middlewares/upload.middleware");
 
 const app = express();
 
@@ -42,7 +42,7 @@ app.use(
 
 // Serve uploaded documents (PDF, DOCX, etc.) at /uploads/documents
 // Placed AFTER cors() so cross-origin fetches from the frontend receive proper CORS headers
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use("/uploads", express.static(UPLOADS_BASE_DIR));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

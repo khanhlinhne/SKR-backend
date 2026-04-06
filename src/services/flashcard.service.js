@@ -141,7 +141,6 @@ const flashcardService = {
     });
 
     const totalPages = Math.ceil(totalItems / limit);
-
     return {
       items: items.map(flashcardDto.setToListItem),
       pagination: {
