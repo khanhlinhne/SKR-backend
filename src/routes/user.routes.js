@@ -2,7 +2,15 @@ const { Router } = require("express");
 const userController = require("../controllers/user.controller");
 const { validate } = require("../middlewares/validate.middleware");
 const { authenticate, authorize } = require("../middlewares/auth.middleware");
-const { updateProfileRules, changePasswordRules, getAllUsersRules } = require("../validators/user.validator");
+const {
+  createUserRules,
+  updateUserStatusRules,
+  updateProfileRules,
+  changePasswordRules,
+  getAllUsersRules,
+  adminUserIdParamRules,
+  adminUpdateUserRules,
+} = require("../validators/user.validator");
 
 const router = Router();
 
@@ -12,6 +20,96 @@ const router = Router();
  *   - name: User
  *     description: User profile management
  */
+
+/**
+ * @swagger
+ * /api/user:
+ *   post:
+ *     tags: [User]
+ *     summary: Create a new user (Admin)
+ *     description: Admin creates a new user account with specified roles. Welcome email is sent automatically.
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: newuser@email.com
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: secret123
+ *               fullName:
+ *                 type: string
+ *                 example: Nguyen Van A
+ *               username:
+ *                 type: string
+ *                 example: nguyenvana
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+84912345678"
+ *               roles:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["Learner"]
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *       400:
+ *         description: Validation failed or email already exists
+ *       401:
+ *         description: Access token missing or invalid
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.post("/", authenticate, authorize("admin"), createUserRules, validate, userController.createUser);
+
+/**
+ * @swagger
+ * /api/user/{id}/status:
+ *   put:
+ *     tags: [User]
+ *     summary: Update user active status (Admin)
+ *     description: Ban or unban a user account.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [isActive]
+ *             properties:
+ *               isActive:
+ *                 type: boolean
+ *                 example: false
+ *     responses:
+ *       200:
+ *         description: User status updated
+ *       400:
+ *         description: Validation failed
+ *       401:
+ *         description: Access token missing or invalid
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.put("/:id/status", authenticate, authorize("admin"), updateUserStatusRules, validate, userController.updateUserStatus);
 
 /**
  * @swagger
@@ -213,5 +311,90 @@ router.put("/profile", authenticate, updateProfileRules, validate, userControlle
  *         description: Access token missing or invalid
  */
 router.post("/change-password", authenticate, changePasswordRules, validate, userController.changePassword);
+
+/**
+ * @swagger
+ * /api/user/{id}:
+ *   get:
+ *     tags: [User]
+ *     summary: Get user by ID (Admin)
+ *     description: Full profile including roles for a single user.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: User retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: User not found
+ *   patch:
+ *     tags: [User]
+ *     summary: Update user by ID (Admin)
+ *     description: Update profile fields and/or roles. Omitted fields are unchanged.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email: { type: string, format: email }
+ *               username: { type: string }
+ *               fullName: { type: string }
+ *               phoneNumber: { type: string }
+ *               dateOfBirth: { type: string, format: date }
+ *               bio: { type: string }
+ *               avatarUrl: { type: string, format: uri }
+ *               timezoneOffset: { type: integer }
+ *               emailVerified: { type: boolean }
+ *               roles:
+ *                 type: array
+ *                 items: { type: string }
+ *                 description: Role codes (replaces active role assignments when provided)
+ *     responses:
+ *       200:
+ *         description: User updated successfully
+ *       400:
+ *         description: Validation failed
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Email or username conflict
+ */
+router.get(
+  "/:id",
+  authenticate,
+  authorize("admin"),
+  adminUserIdParamRules,
+  validate,
+  userController.getUserByIdForAdmin
+);
+router.patch(
+  "/:id",
+  authenticate,
+  authorize("admin"),
+  adminUserIdParamRules,
+  adminUpdateUserRules,
+  validate,
+  userController.updateUserByAdmin
+);
 
 module.exports = router;

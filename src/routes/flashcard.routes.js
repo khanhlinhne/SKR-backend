@@ -8,6 +8,9 @@ const {
   setIdParamRules,
   getMySetsRules,
   getItemsRules,
+  startStudySessionRules,
+  submitStudyReviewRules,
+  completeStudySessionRules,
   itemIdParamRules,
   createItemRules,
   updateItemRules,
@@ -29,7 +32,7 @@ router.use(authenticate);
  * /api/flashcard-sets:
  *   get:
  *     tags: [Flashcard]
- *     summary: Get my flashcard sets
+ *     summary: Get accessible flashcard sets
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -106,6 +109,25 @@ router.use(authenticate);
  */
 router.get("/", getMySetsRules, validate, flashcardController.getMySets);
 router.post("/", createSetRules, validate, flashcardController.createSet);
+
+router.post(
+  "/:setId/study-sessions",
+  startStudySessionRules,
+  validate,
+  flashcardController.startStudySession
+);
+router.post(
+  "/:setId/study-sessions/:sessionId/reviews",
+  submitStudyReviewRules,
+  validate,
+  flashcardController.submitStudyReview
+);
+router.post(
+  "/:setId/study-sessions/:sessionId/complete",
+  completeStudySessionRules,
+  validate,
+  flashcardController.completeStudySession
+);
 
 /**
  * @swagger

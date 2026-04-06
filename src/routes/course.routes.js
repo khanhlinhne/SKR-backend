@@ -3,6 +3,10 @@ const courseController = require("../controllers/course.controller");
 const { validate } = require("../middlewares/validate.middleware");
 const { authenticate, authorize } = require("../middlewares/auth.middleware");
 const {
+  uploadDocument,
+  handleDocumentMulterError,
+} = require("../middlewares/upload.middleware");
+const {
   getCoursesRules,
   getCourseDetailRules,
   createCourseRules,
@@ -301,6 +305,58 @@ router.delete(
   deleteCourseRules,
   validate,
   courseController.deleteCourse
+);
+
+// ══════════════════════════════════════════════
+//  ASSIGN EXPERT
+// ══════════════════════════════════════════════
+
+/**
+ * @swagger
+ * /api/courses/{id}/assign-expert:
+ *   patch:
+ *     tags: [Course]
+ *     summary: Assign an expert to a course (Admin only)
+ *     description: Updates the creator/expert responsible for building the course content.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Course ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [expertId]
+ *             properties:
+ *               expertId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: The user ID of the expert to assign
+ *     responses:
+ *       200:
+ *         description: Expert assigned successfully
+ *       400:
+ *         description: Invalid expert or validation failed
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Course or expert not found
+ */
+router.patch(
+  "/:id/assign-expert",
+  authenticate,
+  authorize("admin"),
+  courseController.assignExpert
 );
 
 // ══════════════════════════════════════════════
@@ -646,6 +702,66 @@ router.delete(
   deleteLessonRules,
   validate,
   courseController.deleteLesson
+);
+
+// ══════════════════════════════════════════════
+//  LESSON CONTENT (Videos, Documents, Questions)
+// ══════════════════════════════════════════════
+
+// Get lesson content (videos, documents, questions)
+router.get(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/content",
+  courseController.getLessonContent
+);
+
+// ── Videos ──
+router.post(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/videos",
+  authenticate,
+  authorize("admin", "creator"),
+  courseController.addVideo
+);
+
+router.delete(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/videos/:videoId",
+  authenticate,
+  authorize("admin", "creator"),
+  courseController.deleteVideo
+);
+
+// ── Documents ──
+router.post(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/documents",
+  authenticate,
+  authorize("admin", "creator"),
+  uploadDocument.fields([
+    { name: "file", maxCount: 1 },
+    { name: "document", maxCount: 1 },
+  ]),
+  handleDocumentMulterError,
+  courseController.addDocument
+);
+
+router.delete(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/documents/:documentId",
+  authenticate,
+  authorize("admin", "creator"),
+  courseController.deleteDocument
+);
+
+// ── Questions ──
+router.post(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/questions",
+  authenticate,
+  authorize("admin", "creator"),
+  courseController.addQuestion
+);
+
+router.delete(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/questions/:questionId",
+  authenticate,
+  authorize("admin", "creator"),
+  courseController.deleteQuestion
 );
 
 module.exports = router;

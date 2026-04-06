@@ -48,6 +48,7 @@ const userRepository = {
         full_name: data.fullName || null,
         display_name: data.displayName || null,
         avatar_url: data.avatarUrl || null,
+        phone_number: data.phoneNumber ?? null,
         timezone_offset: data.timezoneOffset ?? 7,
         email_verified: data.emailVerified || false,
         created_by: data.createdBy || "00000000-0000-0000-0000-000000000000",
@@ -64,12 +65,12 @@ const userRepository = {
     return user;
   },
 
-  async update(userId, data) {
+  async update(userId, data, updatedByUserId) {
     return prisma.mst_users.update({
       where: { user_id: userId },
       data: {
         ...data,
-        updated_by: userId,
+        updated_by: updatedByUserId ?? userId,
         updated_at_utc: new Date(),
       },
     });
@@ -99,6 +100,26 @@ const userRepository = {
     ]);
 
     return { items, totalItems };
+  },
+
+  async assignRoles(userId, roleIds, createdBy) {
+    // Deactivate existing roles first
+    await prisma.mst_user_roles.updateMany({
+      where: { user_id: userId, is_active: true },
+      data: { is_active: false, updated_by: createdBy, updated_at_utc: new Date() },
+    });
+
+    // Create new role assignments
+    const assignments = roleIds.map((roleId) => ({
+      user_id: userId,
+      role_id: roleId,
+      created_by: createdBy,
+      is_active: true,
+    }));
+
+    if (assignments.length > 0) {
+      await prisma.mst_user_roles.createMany({ data: assignments });
+    }
   },
 
   async updateLastLogin(userId) {

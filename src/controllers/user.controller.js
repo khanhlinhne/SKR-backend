@@ -2,6 +2,42 @@ const userService = require("../services/user.service");
 const { success } = require("../utils/response.util");
 
 const userController = {
+  async createUser(req, res, next) {
+    try {
+      const data = await userService.createUser(req.body, req.user.userId);
+      return success(res, { statusCode: 201, message: "Tao tai khoan thanh cong", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async updateUserStatus(req, res, next) {
+    try {
+      const data = await userService.updateUserStatus(req.params.id, req.body, req.user.userId);
+      return success(res, { message: data.message });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getUserByIdForAdmin(req, res, next) {
+    try {
+      const data = await userService.getUserByIdForAdmin(req.params.id);
+      return success(res, { message: "User retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async updateUserByAdmin(req, res, next) {
+    try {
+      const data = await userService.updateUserByAdmin(req.params.id, req.body, req.user.userId);
+      return success(res, { message: "User updated successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async getAllUsers(req, res, next) {
     try {
       const data = await userService.getAllUsers(req.query);

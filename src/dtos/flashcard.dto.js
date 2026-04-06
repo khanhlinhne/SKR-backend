@@ -10,6 +10,8 @@ function setToListItem(set) {
     visibility: set.visibility,
     tags: set.tags,
     totalCards: set.total_cards ?? set._count?.cnt_flashcard_items ?? 0,
+    masteredCount: Number(set.masteredCount ?? set.mastered_count ?? 0),
+    dueToday: Number(set.dueToday ?? set.due_today ?? 0),
     timesStudied: set.times_studied,
     averageRating: set.average_rating,
     status: set.status,
@@ -38,6 +40,8 @@ function setToDetail(set) {
     visibility: set.visibility,
     tags: set.tags,
     totalCards: set.total_cards,
+    masteredCount: Number(set.masteredCount ?? set.mastered_count ?? 0),
+    dueToday: Number(set.dueToday ?? set.due_today ?? 0),
     timesStudied: set.times_studied,
     averageRating: set.average_rating,
     status: set.status,
@@ -73,8 +77,49 @@ function itemToResponse(item) {
   };
 }
 
+function sessionToResponse(session) {
+  if (!session) return null;
+
+  return {
+    sessionId: session.session_id,
+    flashcardSetId: session.flashcard_set_id,
+    totalCards: session.total_cards,
+    cardsReviewed: session.cards_reviewed ?? 0,
+    cardsMastered: session.cards_mastered ?? 0,
+    cardsLearning: session.cards_learning ?? 0,
+    cardsNew: session.cards_new ?? 0,
+    startedAt: session.started_at_utc,
+    endedAt: session.ended_at_utc,
+    sessionDurationSeconds: session.session_duration_seconds ?? 0,
+    status: session.status,
+  };
+}
+
+function reviewToResponse(review) {
+  if (!review) return null;
+
+  return {
+    reviewId: review.review_id,
+    sessionId: review.session_id,
+    flashcardItemId: review.flashcard_item_id,
+    userRating: review.user_rating,
+    wasCorrect: review.was_correct,
+    timeToAnswerSeconds: review.time_to_answer_seconds ?? 0,
+    previousEaseFactor: review.previous_ease_factor != null ? Number(review.previous_ease_factor) : null,
+    newEaseFactor: review.new_ease_factor != null ? Number(review.new_ease_factor) : null,
+    previousIntervalDays: review.previous_interval_days ?? 0,
+    newIntervalDays: review.new_interval_days ?? 0,
+    nextReviewAt: review.next_review_at_utc,
+    status: review.status,
+    createdAt: review.created_at_utc,
+    updatedAt: review.updated_at_utc,
+  };
+}
+
 module.exports = {
   setToListItem,
   setToDetail,
   itemToResponse,
+  sessionToResponse,
+  reviewToResponse,
 };

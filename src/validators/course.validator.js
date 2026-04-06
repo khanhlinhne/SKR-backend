@@ -39,8 +39,8 @@ const getCourseDetailRules = [
 
 const createCourseRules = [
   body("courseCode")
+    .optional()
     .trim()
-    .notEmpty().withMessage("courseCode is required")
     .isLength({ max: 50 }).withMessage("courseCode must not exceed 50 characters")
     .matches(/^[A-Za-z0-9_-]+$/).withMessage("courseCode must contain only letters, numbers, hyphens and underscores"),
   body("courseName")
@@ -50,6 +50,10 @@ const createCourseRules = [
   body("courseDescription")
     .optional()
     .trim(),
+  body("category")
+    .optional()
+    .trim()
+    .isLength({ max: 100 }).withMessage("category must not exceed 100 characters"),
   body("courseIconUrl")
     .optional()
     .trim()
@@ -112,6 +116,10 @@ const updateCourseRules = [
   body("courseDescription")
     .optional()
     .trim(),
+  body("category")
+    .optional()
+    .trim()
+    .isLength({ max: 100 }).withMessage("category must not exceed 100 characters"),
   body("courseIconUrl")
     .optional()
     .trim()

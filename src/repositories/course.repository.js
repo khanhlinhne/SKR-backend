@@ -5,7 +5,7 @@ const courseRepository = {
 
   async findMany({ where, orderBy, skip, take }) {
     const [items, totalItems] = await prisma.$transaction([
-      prisma.mst_courses.findMany({
+      prisma.mst_courses.EfindMany({
         where,
         orderBy,
         skip,
@@ -85,12 +85,13 @@ const courseRepository = {
         course_code: data.courseCode,
         course_name: data.courseName,
         course_description: data.courseDescription ?? null,
+        category: data.category ?? null,
         course_icon_url: data.courseIconUrl ?? null,
         course_banner_url: data.courseBannerUrl ?? null,
         course_preview_video_url: data.coursePreviewVideoUrl ?? null,
         display_order: data.displayOrder ?? 0,
         creator_id: data.creatorId,
-        is_free: data.isFree ?? true,
+        is_free: data.isFree ?? false,
         price_amount: data.priceAmount ?? 0,
         original_price: data.originalPrice ?? null,
         currency_code: data.currencyCode ?? "VND",
@@ -111,6 +112,7 @@ const courseRepository = {
         ...(data.courseCode != null && { course_code: data.courseCode }),
         ...(data.courseName != null && { course_name: data.courseName }),
         ...(data.courseDescription !== undefined && { course_description: data.courseDescription }),
+        ...(data.category !== undefined && { category: data.category }),
         ...(data.courseIconUrl !== undefined && { course_icon_url: data.courseIconUrl }),
         ...(data.courseBannerUrl !== undefined && { course_banner_url: data.courseBannerUrl }),
         ...(data.coursePreviewVideoUrl !== undefined && { course_preview_video_url: data.coursePreviewVideoUrl }),
@@ -245,6 +247,72 @@ const courseRepository = {
     });
   },
 
+  async findLessonByIdWithContent(lessonId) {
+    return prisma.mst_lessons.findUnique({
+      where: { lesson_id: lessonId },
+      include: {
+        cnt_videos: {
+          where: { status: { not: "deleted" } },
+          orderBy: { created_at_utc: "desc" },
+          select: {
+            video_id: true,
+            video_title: true,
+            video_description: true,
+            video_url: true,
+            video_thumbnail_url: true,
+            video_duration_seconds: true,
+            video_format: true,
+            file_size_bytes: true,
+            status: true,
+            created_at_utc: true,
+          },
+        },
+        cnt_documents: {
+          where: { status: { not: "deleted" } },
+          orderBy: { created_at_utc: "desc" },
+          select: {
+            document_id: true,
+            document_title: true,
+            document_description: true,
+            file_name: true,
+            file_url: true,
+            file_type: true,
+            file_size_bytes: true,
+            page_count: true,
+            status: true,
+            created_at_utc: true,
+          },
+        },
+        cnt_questions: {
+          where: { status: { not: "deleted" } },
+          orderBy: { created_at_utc: "desc" },
+          select: {
+            question_id: true,
+            question_type: true,
+            question_text: true,
+            question_explanation: true,
+            difficulty_level: true,
+            points: true,
+            time_limit_seconds: true,
+            status: true,
+            created_at_utc: true,
+            cnt_question_options: {
+              where: { status: { not: "deleted" } },
+              orderBy: { option_order: "asc" },
+              select: {
+                option_id: true,
+                option_text: true,
+                option_order: true,
+                is_correct: true,
+                option_explanation: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  },
+
   async findLessonByCode(chapterId, lessonCode) {
     return prisma.mst_lessons.findUnique({
       where: { chapter_id_lesson_code: { chapter_id: chapterId, lesson_code: lessonCode } },
@@ -295,12 +363,153 @@ const courseRepository = {
     });
   },
 
+  async assignCreator(courseId, creatorId, updatedBy) {
+    return prisma.mst_courses.update({
+      where: { course_id: courseId },
+      data: {
+        creator_id: creatorId,
+        updated_by: updatedBy,
+        updated_at_utc: new Date(),
+      },
+    });
+  },
+
   async getMaxLessonOrder(chapterId) {
     const agg = await prisma.mst_lessons.aggregate({
       where: { chapter_id: chapterId, is_active: true },
       _max: { display_order: true },
     });
     return agg._max?.display_order ?? 0;
+  },
+
+  // ──────────────── LESSON CONTENT ────────────────
+
+  async createVideo(data) {
+    return prisma.cnt_videos.create({
+      data: {
+        video_title: data.videoTitle,
+        video_description: data.videoDescription ?? null,
+        video_url: data.videoUrl,
+        video_thumbnail_url: data.videoThumbnailUrl ?? null,
+        video_duration_seconds: data.videoDurationSeconds ?? null,
+        video_format: data.videoFormat ?? null,
+        file_size_bytes: data.fileSizeBytes ?? null,
+        uploader_id: data.uploaderId,
+        lesson_id: data.lessonId,
+        course_id: data.courseId ?? null,
+        visibility: data.visibility ?? "private",
+        status: data.status ?? "active",
+        created_by: data.createdBy,
+      },
+    });
+  },
+
+  async deleteVideo(videoId, userId) {
+    return prisma.cnt_videos.update({
+      where: { video_id: videoId },
+      data: {
+        status: "deleted",
+        updated_by: userId,
+        updated_at_utc: new Date(),
+      },
+    });
+  },
+
+  async findVideoById(videoId) {
+    return prisma.cnt_videos.findUnique({ where: { video_id: videoId } });
+  },
+
+  async createDocumentRecord(data) {
+    return prisma.cnt_documents.create({
+      data: {
+        document_title: data.documentTitle,
+        document_description: data.documentDescription ?? null,
+        file_name: data.fileName,
+        file_url: data.fileUrl,
+        file_type: data.fileType ?? null,
+        file_size_bytes: data.fileSizeBytes ?? null,
+        page_count: data.pageCount ?? null,
+        uploader_id: data.uploaderId,
+        lesson_id: data.lessonId,
+        course_id: data.courseId ?? null,
+        visibility: data.visibility ?? "private",
+        status: data.status ?? "active",
+        created_by: data.createdBy,
+      },
+    });
+  },
+
+  async deleteDocument(documentId, userId) {
+    return prisma.cnt_documents.update({
+      where: { document_id: documentId },
+      data: {
+        status: "deleted",
+        updated_by: userId,
+        updated_at_utc: new Date(),
+      },
+    });
+  },
+
+  async findDocumentById(documentId) {
+    return prisma.cnt_documents.findUnique({ where: { document_id: documentId } });
+  },
+
+  async createQuestion(data) {
+    return prisma.cnt_questions.create({
+      data: {
+        question_type: data.questionType,
+        question_text: data.questionText,
+        question_explanation: data.questionExplanation ?? null,
+        difficulty_level: data.difficultyLevel ?? "medium",
+        points: data.points ?? 1.0,
+        time_limit_seconds: data.timeLimitSeconds ?? null,
+        creator_id: data.creatorId,
+        lesson_id: data.lessonId,
+        course_id: data.courseId ?? null,
+        visibility: data.visibility ?? "private",
+        status: data.status ?? "active",
+        created_by: data.createdBy,
+        cnt_question_options: data.options?.length
+          ? {
+              create: data.options.map((opt, idx) => ({
+                option_text: opt.optionText,
+                option_order: opt.optionOrder ?? idx,
+                is_correct: opt.isCorrect ?? false,
+                option_explanation: opt.optionExplanation ?? null,
+                created_by: data.createdBy,
+              })),
+            }
+          : undefined,
+      },
+      include: {
+        cnt_question_options: {
+          orderBy: { option_order: "asc" },
+        },
+      },
+    });
+  },
+
+  async deleteQuestion(questionId, userId) {
+    return prisma.cnt_questions.update({
+      where: { question_id: questionId },
+      data: {
+        status: "deleted",
+        updated_by: userId,
+        updated_at_utc: new Date(),
+      },
+    });
+  },
+
+  async findQuestionById(questionId) {
+    return prisma.cnt_questions.findUnique({
+      where: { question_id: questionId },
+      include: {
+        cnt_question_options: {
+          where: { status: { not: "deleted" } },
+          orderBy: { option_order: "asc" },
+        },
+      },
+    });
   },
 };
 

@@ -64,8 +64,44 @@ const getMySetsRules = [
     .withMessage("visibility must be public, private, premium_only or unlisted"),
 ];
 
+const getPublicSetsRules = [
+  query("page").optional().isInt({ min: 1 }).withMessage("page must be a positive integer"),
+  query("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage("limit must be between 1 and 100"),
+  query("courseId").optional().isUUID().withMessage("courseId must be a valid UUID"),
+  query("search").optional().trim().isLength({ max: 255 }).withMessage("search is too long"),
+];
+
 const getItemsRules = [
   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+];
+
+const startStudySessionRules = [
+  param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+];
+
+const submitStudyReviewRules = [
+  param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+  param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),
+  body("flashcardItemId").isUUID().withMessage("flashcardItemId must be a valid UUID"),
+  body("result")
+    .isIn(["correct", "incorrect", "skip"])
+    .withMessage("result must be correct, incorrect or skip"),
+  body("timeToAnswerSeconds")
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage("timeToAnswerSeconds must be a non-negative integer"),
+];
+
+const completeStudySessionRules = [
+  param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+  param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),
+  body("sessionDurationSeconds")
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage("sessionDurationSeconds must be a non-negative integer"),
 ];
 
 const itemIdParamRules = [
@@ -104,7 +140,11 @@ module.exports = {
   updateSetRules,
   setIdParamRules,
   getMySetsRules,
+  getPublicSetsRules,
   getItemsRules,
+  startStudySessionRules,
+  submitStudyReviewRules,
+  completeStudySessionRules,
   itemIdParamRules,
   createItemRules,
   updateItemRules,
