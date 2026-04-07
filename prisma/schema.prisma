@@ -196,6 +196,7 @@ model cnt_flashcard_items {
 
   @@index([card_order], map: "idx_flashcard_items_order")
   @@index([flashcard_set_id], map: "idx_flashcard_items_set")
+  @@index([flashcard_set_id, status], map: "idx_flashcard_items_set_status")
 }
 
 model cnt_flashcards {
@@ -395,6 +396,8 @@ model lrn_flashcard_reviews {
   @@index([next_review_at_utc], map: "idx_flashcard_reviews_next_review")
   @@index([session_id], map: "idx_flashcard_reviews_session")
   @@index([user_id], map: "idx_flashcard_reviews_user")
+  @@index([user_id, flashcard_item_id, created_at_utc(sort: Desc)], map: "idx_flashcard_reviews_user_item")
+  @@index([session_id, flashcard_item_id], map: "idx_flashcard_reviews_session_item")
 }
 
 model lrn_flashcard_sessions {

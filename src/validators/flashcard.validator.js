@@ -95,6 +95,20 @@ const submitStudyReviewRules = [
     .withMessage("timeToAnswerSeconds must be a non-negative integer"),
 ];
 
+const submitStudyReviewBatchRules = [
+  param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+  param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),
+  body("reviews")
+    .isArray({ min: 1, max: 50 })
+    .withMessage("reviews must be an array with 1-50 items"),
+  body("reviews.*.flashcardItemId")
+    .isUUID()
+    .withMessage("Each review flashcardItemId must be a valid UUID"),
+  body("reviews.*.result")
+    .isIn(["correct", "incorrect", "skip"])
+    .withMessage("Each review result must be correct, incorrect or skip"),
+];
+
 const completeStudySessionRules = [
   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
   param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),
@@ -121,6 +135,7 @@ const createItemRules = [
   body("intervalDays").optional().isInt({ min: 0 }).withMessage("intervalDays must be non-negative"),
 ];
 
+
 const updateItemRules = [
   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
   param("itemId").isUUID().withMessage("Flashcard item ID must be a valid UUID"),
@@ -144,6 +159,7 @@ module.exports = {
   getItemsRules,
   startStudySessionRules,
   submitStudyReviewRules,
+  submitStudyReviewBatchRules,
   completeStudySessionRules,
   itemIdParamRules,
   createItemRules,

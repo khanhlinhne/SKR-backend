@@ -10,6 +10,7 @@ const {
   getItemsRules,
   startStudySessionRules,
   submitStudyReviewRules,
+  submitStudyReviewBatchRules,
   completeStudySessionRules,
   itemIdParamRules,
   createItemRules,
@@ -115,6 +116,12 @@ router.post(
   startStudySessionRules,
   validate,
   flashcardController.startStudySession
+);
+router.post(
+  "/:setId/study-sessions/:sessionId/reviews/batch",
+  submitStudyReviewBatchRules,
+  validate,
+  flashcardController.submitStudyReviewBatch
 );
 router.post(
   "/:setId/study-sessions/:sessionId/reviews",

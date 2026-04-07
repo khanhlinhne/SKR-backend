@@ -373,10 +373,11 @@ const flashcardService = {
       throw AppError.unauthorized("Authentication required to start a study session.");
     }
 
-    const set = await flashcardRepository.findSetById(flashcardSetId);
+    // Use lightweight query - total_cards is already stored on the set
+    const set = await flashcardRepository.findSetBasicById(flashcardSetId);
     ensureSetReadable(set, userId);
 
-    const totalCards = (set.cnt_flashcard_items || []).length;
+    const totalCards = set.total_cards ?? 0;
     const session = await flashcardRepository.createStudySession({
       userId,
       flashcardSetId,
@@ -398,7 +399,8 @@ const flashcardService = {
       throw AppError.badRequest("result must be correct, incorrect or skip");
     }
 
-    const set = await flashcardRepository.findSetById(flashcardSetId);
+    // Use lightweight query - no need to load all items for a single review
+    const set = await flashcardRepository.findSetBasicById(flashcardSetId);
     ensureSetReadable(set, userId);
 
     const session = await flashcardRepository.findStudySessionById(sessionId);
@@ -458,6 +460,209 @@ const flashcardService = {
 
     return {
       review: flashcardDto.reviewToResponse(review),
+      session: flashcardDto.sessionToResponse(updatedSession),
+      deckProgress: await getDeckProgress(userId, flashcardSetId),
+    };
+  },
+
+  /**
+   * Batch submit multiple reviews in one request.
+   * Drastically reduces DB round-trips: 1 set check + 1 session check + N reviews in 1 transaction.
+   */
+  async submitStudyReviewBatch(flashcardSetId, sessionId, userId, body) {
+    if (userId == null) {
+      throw AppError.unauthorized("Authentication required to save flashcard progress.");
+    }
+
+    const reviews = body.reviews;
+    if (!Array.isArray(reviews) || reviews.length === 0) {
+      throw AppError.badRequest("reviews must be a non-empty array");
+    }
+    if (reviews.length > 50) {
+      throw AppError.badRequest("Cannot submit more than 50 reviews at once");
+    }
+
+    // Validate all results upfront
+    for (const review of reviews) {
+      if (!VALID_REVIEW_RESULTS.includes(review.result)) {
+        throw AppError.badRequest("Each review result must be correct, incorrect or skip");
+      }
+      if (!review.flashcardItemId) {
+        throw AppError.badRequest("Each review must have a flashcardItemId");
+      }
+    }
+
+    // 1 lightweight query for permission check (no items loaded)
+    const set = await flashcardRepository.findSetBasicById(flashcardSetId);
+    ensureSetReadable(set, userId);
+
+    // 1 query for session validation
+    const session = await flashcardRepository.findStudySessionById(sessionId);
+    if (!session || session.flashcard_set_id !== flashcardSetId) {
+      throw AppError.notFound("Study session not found");
+    }
+    if (session.user_id !== userId) {
+      throw AppError.forbidden("You can only update your own study session");
+    }
+    if (session.status === "completed" || session.status === "abandoned") {
+      throw AppError.badRequest("This study session has already ended");
+    }
+
+    // Batch load all needed items in 1 query
+    const itemIds = [...new Set(reviews.map((r) => r.flashcardItemId))];
+    const items = await prisma.cnt_flashcard_items.findMany({
+      where: {
+        flashcard_item_id: { in: itemIds },
+        flashcard_set_id: flashcardSetId,
+        status: "active",
+      },
+      select: {
+        flashcard_item_id: true,
+        ease_factor: true,
+        interval_days: true,
+      },
+    });
+    const itemMap = new Map(items.map((item) => [item.flashcard_item_id, item]));
+
+    // Batch load latest reviews for all items in 1 query
+    const latestReviews = await prisma.lrn_flashcard_reviews.findMany({
+      where: {
+        user_id: userId,
+        flashcard_item_id: { in: itemIds },
+      },
+      orderBy: [{ flashcard_item_id: "asc" }, { created_at_utc: "desc" }],
+      select: {
+        flashcard_item_id: true,
+        new_ease_factor: true,
+        new_interval_days: true,
+      },
+    });
+    const latestReviewMap = new Map();
+    for (const r of latestReviews) {
+      if (!latestReviewMap.has(r.flashcard_item_id)) {
+        latestReviewMap.set(r.flashcard_item_id, r);
+      }
+    }
+
+    // Batch load existing session reviews in 1 query
+    const existingSessionReviews = await prisma.lrn_flashcard_reviews.findMany({
+      where: {
+        session_id: sessionId,
+        flashcard_item_id: { in: itemIds },
+      },
+      select: {
+        review_id: true,
+        flashcard_item_id: true,
+      },
+    });
+    const sessionReviewMap = new Map(
+      existingSessionReviews.map((r) => [r.flashcard_item_id, r])
+    );
+
+    // Build all review operations
+    const createOperations = [];
+    const updateOperations = [];
+    const skippedItemIds = [];
+
+    for (const review of reviews) {
+      const item = itemMap.get(review.flashcardItemId);
+      if (!item) {
+        skippedItemIds.push(review.flashcardItemId);
+        continue;
+      }
+
+      const latestReview = latestReviewMap.get(review.flashcardItemId);
+      const schedule = buildReviewSchedule(
+        review.result,
+        latestReview?.new_ease_factor ?? item.ease_factor,
+        latestReview?.new_interval_days ?? item.interval_days
+      );
+
+      const reviewPayload = {
+        userRating: schedule.userRating,
+        wasCorrect: schedule.wasCorrect,
+        timeToAnswerSeconds: review.timeToAnswerSeconds ?? 0,
+        previousEaseFactor: schedule.previousEaseFactor,
+        newEaseFactor: schedule.newEaseFactor,
+        previousIntervalDays: schedule.previousIntervalDays,
+        newIntervalDays: schedule.newIntervalDays,
+        nextReviewAtUtc: schedule.nextReviewAtUtc,
+        status: schedule.reviewStatus ?? "completed",
+      };
+
+      const existingReview = sessionReviewMap.get(review.flashcardItemId);
+      if (existingReview) {
+        updateOperations.push({
+          reviewId: existingReview.review_id,
+          ...reviewPayload,
+          updatedBy: userId,
+        });
+      } else {
+        createOperations.push({
+          sessionId,
+          userId,
+          flashcardItemId: review.flashcardItemId,
+          ...reviewPayload,
+          createdBy: userId,
+        });
+      }
+    }
+
+    // Execute all DB writes in a single transaction
+    const transactionOps = [
+      ...createOperations.map((data) =>
+        prisma.lrn_flashcard_reviews.create({
+          data: {
+            session_id: data.sessionId,
+            user_id: data.userId,
+            flashcard_item_id: data.flashcardItemId,
+            user_rating: data.userRating,
+            was_correct: data.wasCorrect,
+            time_to_answer_seconds: data.timeToAnswerSeconds ?? 0,
+            previous_ease_factor: data.previousEaseFactor,
+            new_ease_factor: data.newEaseFactor,
+            previous_interval_days: data.previousIntervalDays ?? 0,
+            new_interval_days: data.newIntervalDays ?? 0,
+            next_review_at_utc: data.nextReviewAtUtc,
+            created_by: data.createdBy,
+            status: data.status ?? "completed",
+          },
+        })
+      ),
+      ...updateOperations.map((data) =>
+        prisma.lrn_flashcard_reviews.update({
+          where: { review_id: data.reviewId },
+          data: {
+            user_rating: data.userRating,
+            was_correct: data.wasCorrect,
+            time_to_answer_seconds: data.timeToAnswerSeconds ?? 0,
+            previous_ease_factor: data.previousEaseFactor,
+            new_ease_factor: data.newEaseFactor,
+            previous_interval_days: data.previousIntervalDays ?? 0,
+            new_interval_days: data.newIntervalDays ?? 0,
+            next_review_at_utc: data.nextReviewAtUtc,
+            updated_by: data.updatedBy,
+            updated_at_utc: new Date(),
+            status: data.status ?? "completed",
+          },
+        })
+      ),
+    ];
+
+    if (transactionOps.length > 0) {
+      await prisma.$transaction(transactionOps);
+    }
+
+    // 1 refresh at the end instead of N
+    const updatedSession = await flashcardRepository.refreshStudySessionStats(
+      sessionId,
+      session.total_cards,
+      userId
+    );
+
+    return {
+      processedCount: createOperations.length + updateOperations.length,
+      skippedCount: skippedItemIds.length,
       session: flashcardDto.sessionToResponse(updatedSession),
       deckProgress: await getDeckProgress(userId, flashcardSetId),
     };
