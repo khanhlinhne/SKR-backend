@@ -36,41 +36,6 @@ const createUserRules = [
     .isString().withMessage("Vai tro phai la chuoi"),
 ];
 
-const updateUserStatusRules = [
-  body("isActive")
-    .notEmpty().withMessage("isActive la bat buoc")
-    .isBoolean().withMessage("isActive phai la kieu boolean"),
-];
-
-const createUserRules = [
-  body("email")
-    .trim()
-    .notEmpty().withMessage("Email la bat buoc")
-    .isEmail().withMessage("Email khong hop le")
-    .normalizeEmail(),
-  body("password")
-    .notEmpty().withMessage("Mat khau la bat buoc")
-    .isLength({ min: 6 }).withMessage("Mat khau toi thieu 6 ky tu"),
-  body("fullName")
-    .optional()
-    .trim()
-    .isLength({ max: 255 }).withMessage("Ho ten khong qua 255 ky tu"),
-  body("username")
-    .optional()
-    .trim()
-    .isLength({ min: 3, max: 50 }).withMessage("Username 3-50 ky tu")
-    .matches(/^[a-zA-Z0-9_]+$/).withMessage("Username chi chua chu cai, so va dau gach duoi"),
-  body("phoneNumber")
-    .optional()
-    .trim()
-    .matches(/^\+?[0-9\s\-().]{7,20}$/).withMessage("So dien thoai khong hop le"),
-  body("roles")
-    .optional()
-    .isArray({ max: 10 }).withMessage("Toi da 10 vai tro"),
-  body("roles.*")
-    .optional()
-    .isString().withMessage("Vai tro phai la chuoi"),
-];
 
 const updateProfileRules = [
   body("username")

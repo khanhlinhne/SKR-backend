@@ -5,7 +5,7 @@ const courseRepository = {
 
   async findMany({ where, orderBy, skip, take }) {
     const [items, totalItems] = await prisma.$transaction([
-      prisma.mst_courses.EfindMany({
+      prisma.mst_courses.findMany({
         where,
         orderBy,
         skip,
