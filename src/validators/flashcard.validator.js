@@ -108,7 +108,6 @@ const submitStudyReviewBatchRules = [
     .isIn(["correct", "incorrect", "skip"])
     .withMessage("Each review result must be correct, incorrect or skip"),
 ];
-
 const completeStudySessionRules = [
   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
   param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),

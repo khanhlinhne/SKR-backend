@@ -110,7 +110,6 @@ const flashcardController = {
       next(err);
     }
   },
-
   async completeStudySession(req, res, next) {
     try {
       const data = await flashcardService.completeStudySession(

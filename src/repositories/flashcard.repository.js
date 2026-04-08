@@ -68,7 +68,6 @@ const flashcardRepository = {
       )
     );
   },
-
   async findPublicSets({ courseId, search, orderBy, skip, take }) {
     const where = {
       visibility: "public",

@@ -667,7 +667,6 @@ const flashcardService = {
       deckProgress: await getDeckProgress(userId, flashcardSetId),
     };
   },
-
   async completeStudySession(flashcardSetId, sessionId, userId, body) {
     if (userId == null) {
       throw AppError.unauthorized("Authentication required to complete a study session.");
