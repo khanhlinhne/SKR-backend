@@ -65,6 +65,14 @@ const courseRepository = {
                 display_order: true,
                 learning_objectives: true,
                 estimated_duration_minutes: true,
+                _count: {
+                  select: {
+                    cnt_videos: { where: { status: { not: "deleted" } } },
+                    cnt_documents: { where: { status: { not: "deleted" } } },
+                    cnt_questions: { where: { status: { not: "deleted" } } },
+                    cnt_flashcards: { where: { status: { not: "archived" } } },
+                  },
+                },
               },
             },
           },
@@ -178,6 +186,16 @@ const courseRepository = {
         mst_lessons: {
           where: { is_active: true },
           orderBy: { display_order: "asc" },
+          include: {
+            _count: {
+              select: {
+                cnt_videos: { where: { status: { not: "deleted" } } },
+                cnt_documents: { where: { status: { not: "deleted" } } },
+                cnt_questions: { where: { status: { not: "deleted" } } },
+                cnt_flashcards: { where: { status: { not: "archived" } } },
+              },
+            },
+          },
         },
       },
     });
@@ -305,6 +323,39 @@ const courseRepository = {
                 option_order: true,
                 is_correct: true,
                 option_explanation: true,
+              },
+            },
+          },
+        },
+        cnt_flashcards: {
+          where: { status: { not: "archived" } },
+          orderBy: { created_at_utc: "desc" },
+          select: {
+            flashcard_set_id: true,
+            set_title: true,
+            set_description: true,
+            set_cover_image_url: true,
+            total_cards: true,
+            visibility: true,
+            status: true,
+            created_at_utc: true,
+            updated_at_utc: true,
+            cnt_flashcard_items: {
+              where: { status: { not: "inactive" } },
+              orderBy: { card_order: "asc" },
+              select: {
+                flashcard_item_id: true,
+                front_text: true,
+                back_text: true,
+                front_image_url: true,
+                back_image_url: true,
+                card_order: true,
+                hint_text: true,
+                ease_factor: true,
+                interval_days: true,
+                status: true,
+                created_at_utc: true,
+                updated_at_utc: true,
               },
             },
           },

@@ -2,6 +2,7 @@ const AppError = require("../utils/AppError");
 const prisma = require("../config/prisma");
 const flashcardRepository = require("../repositories/flashcard.repository");
 const courseRepository = require("../repositories/course.repository");
+const enrollmentRepository = require("../repositories/enrollment.repository");
 const flashcardDto = require("../dtos/flashcard.dto");
 
 const VALID_VISIBILITY = ["public", "private", "premium_only", "unlisted"];
@@ -48,9 +49,34 @@ function ensureSetOwned(set, userId) {
   }
 }
 
+async function ensureSetReadableForUser(set, userId) {
+  ensureSetReadable(set, userId);
+
+  if (set.creator_id === userId) {
+    return;
+  }
+
+  if (set.visibility === "premium_only" && set.course_id) {
+    const purchase = await enrollmentRepository.findByUserAndCourse(userId, set.course_id);
+    if (!purchase || purchase.status !== "active") {
+      throw AppError.forbidden("You need to purchase this course to access its flashcards");
+    }
+  }
+}
+
 function toNumber(value, fallback = 0) {
   const parsed = value == null ? fallback : Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeImageField(...candidates) {
+  for (const candidate of candidates) {
+    if (candidate == null) continue;
+    const value = String(candidate).trim();
+    if (!value) continue;
+    return value;
+  }
+  return null;
 }
 
 function roundToTwo(value) {
@@ -178,7 +204,7 @@ const flashcardService = {
     const page = Math.max(parseInt(query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 10, 1), 100);
     const skip = (page - 1) * limit;
-    const where = {};
+    const where = { lesson_id: null };
     if (query.status) where.status = query.status;
     if (query.visibility) where.visibility = query.visibility;
 
@@ -214,7 +240,7 @@ const flashcardService = {
 
   async getSetById(flashcardSetId, userId) {
     const set = await flashcardRepository.findSetById(flashcardSetId);
-    ensureSetReadable(set, userId);
+    await ensureSetReadableForUser(set, userId);
     const deckProgress = await getDeckProgress(userId, flashcardSetId);
     return flashcardDto.setToDetail({ ...set, ...deckProgress });
   },
@@ -291,7 +317,7 @@ const flashcardService = {
 
   async getItems(flashcardSetId, userId) {
     const set = await flashcardRepository.findSetById(flashcardSetId);
-    ensureSetReadable(set, userId);
+    await ensureSetReadableForUser(set, userId);
     return (set.cnt_flashcard_items || []).map(flashcardDto.itemToResponse);
   },
 
@@ -307,12 +333,15 @@ const flashcardService = {
         ? body.cardOrder
         : (await flashcardRepository.getMaxCardOrder(flashcardSetId)) + 1;
 
+    const frontImageUrl = normalizeImageField(body.frontImageUrl, body.frontImage, body.frontMediaUrl);
+    const backImageUrl = normalizeImageField(body.backImageUrl, body.backImage, body.backMediaUrl);
+
     const item = await flashcardRepository.createItem({
       flashcardSetId,
       frontText: body.frontText,
       backText: body.backText,
-      frontImageUrl: body.frontImageUrl,
-      backImageUrl: body.backImageUrl,
+      frontImageUrl,
+      backImageUrl,
       cardOrder,
       hintText: body.hintText,
       easeFactor: body.easeFactor,
@@ -335,11 +364,26 @@ const flashcardService = {
       throw AppError.notFound("Flashcard item not found");
     }
 
+    const frontImageProvided =
+      Object.prototype.hasOwnProperty.call(body, "frontImageUrl") ||
+      Object.prototype.hasOwnProperty.call(body, "frontImage") ||
+      Object.prototype.hasOwnProperty.call(body, "frontMediaUrl");
+    const backImageProvided =
+      Object.prototype.hasOwnProperty.call(body, "backImageUrl") ||
+      Object.prototype.hasOwnProperty.call(body, "backImage") ||
+      Object.prototype.hasOwnProperty.call(body, "backMediaUrl");
+    const frontImageUrl = frontImageProvided
+      ? normalizeImageField(body.frontImageUrl, body.frontImage, body.frontMediaUrl)
+      : undefined;
+    const backImageUrl = backImageProvided
+      ? normalizeImageField(body.backImageUrl, body.backImage, body.backMediaUrl)
+      : undefined;
+
     await flashcardRepository.updateItem(flashcardItemId, {
       frontText: body.frontText,
       backText: body.backText,
-      frontImageUrl: body.frontImageUrl,
-      backImageUrl: body.backImageUrl,
+      frontImageUrl,
+      backImageUrl,
       cardOrder: body.cardOrder,
       hintText: body.hintText,
       easeFactor: body.easeFactor,
@@ -375,7 +419,7 @@ const flashcardService = {
 
     // Use lightweight query - total_cards is already stored on the set
     const set = await flashcardRepository.findSetBasicById(flashcardSetId);
-    ensureSetReadable(set, userId);
+    await ensureSetReadableForUser(set, userId);
 
     const totalCards = set.total_cards ?? 0;
     const session = await flashcardRepository.createStudySession({
@@ -401,7 +445,7 @@ const flashcardService = {
 
     // Use lightweight query - no need to load all items for a single review
     const set = await flashcardRepository.findSetBasicById(flashcardSetId);
-    ensureSetReadable(set, userId);
+    await ensureSetReadableForUser(set, userId);
 
     const session = await flashcardRepository.findStudySessionById(sessionId);
     if (!session || session.flashcard_set_id !== flashcardSetId) {
@@ -494,7 +538,7 @@ const flashcardService = {
 
     // 1 lightweight query for permission check (no items loaded)
     const set = await flashcardRepository.findSetBasicById(flashcardSetId);
-    ensureSetReadable(set, userId);
+    await ensureSetReadableForUser(set, userId);
 
     // 1 query for session validation
     const session = await flashcardRepository.findStudySessionById(sessionId);

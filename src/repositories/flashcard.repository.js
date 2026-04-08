@@ -35,6 +35,7 @@ const flashcardRepository = {
       select: {
         flashcard_set_id: true,
         creator_id: true,
+        course_id: true,
         visibility: true,
         status: true,
         total_cards: true,
