@@ -202,7 +202,6 @@ const flashcardRepository = {
         return new Map();
       }
 
-      const latestReviewByItem = new Map();
       const reviews = await prisma.lrn_flashcard_reviews.findMany({
         where: {
           user_id: userId,
@@ -212,6 +211,7 @@ const flashcardRepository = {
           { flashcard_item_id: "asc" },
           { created_at_utc: "desc" },
         ],
+        distinct: ["flashcard_item_id"],
         select: {
           flashcard_item_id: true,
           was_correct: true,
@@ -219,11 +219,7 @@ const flashcardRepository = {
         },
       });
 
-      for (const review of reviews) {
-        if (!latestReviewByItem.has(review.flashcard_item_id)) {
-          latestReviewByItem.set(review.flashcard_item_id, review);
-        }
-      }
+      const latestReviewByItem = new Map(reviews.map((review) => [review.flashcard_item_id, review]));
 
       const now = new Date();
       const progressMap = new Map();
@@ -308,7 +304,21 @@ const flashcardRepository = {
   async findItemById(flashcardItemId) {
     return prisma.cnt_flashcard_items.findUnique({
       where: { flashcard_item_id: flashcardItemId },
-      include: { cnt_flashcards: true },
+      select: {
+        flashcard_item_id: true,
+        flashcard_set_id: true,
+        status: true,
+        front_text: true,
+        back_text: true,
+        card_order: true,
+        hint_text: true,
+        ease_factor: true,
+        interval_days: true,
+        front_image_url: true,
+        back_image_url: true,
+        created_at_utc: true,
+        updated_at_utc: true,
+      },
     });
   },
 

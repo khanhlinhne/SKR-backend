@@ -20,7 +20,14 @@ const userRepository = {
             ],
           },
           include: {
-            mst_roles: true,
+            mst_roles: {
+              select: {
+                role_id: true,
+                role_code: true,
+                role_name: true,
+                role_level: true,
+              },
+            },
           },
         },
       },
@@ -92,7 +99,16 @@ const userRepository = {
                 { expires_at_utc: { gt: new Date() } },
               ],
             },
-            include: { mst_roles: true },
+            include: {
+              mst_roles: {
+                select: {
+                  role_id: true,
+                  role_code: true,
+                  role_name: true,
+                  role_level: true,
+                },
+              },
+            },
           },
         },
       }),

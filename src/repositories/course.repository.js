@@ -30,6 +30,20 @@ const courseRepository = {
   async findById(courseId) {
     return prisma.mst_courses.findUnique({
       where: { course_id: courseId },
+      select: {
+        course_id: true,
+        course_code: true,
+        course_name: true,
+        creator_id: true,
+        status: true,
+        is_active: true,
+      },
+    });
+  },
+
+  async findByIdWithStructure(courseId) {
+    return prisma.mst_courses.findUnique({
+      where: { course_id: courseId },
       include: {
         mst_users: {
           select: {
@@ -177,9 +191,43 @@ const courseRepository = {
     });
   },
 
+  async adjustContentStats(courseId, { videos = 0, documents = 0, questions = 0 } = {}) {
+    const deltaVideos = Number(videos) || 0;
+    const deltaDocuments = Number(documents) || 0;
+    const deltaQuestions = Number(questions) || 0;
+
+    if (!deltaVideos && !deltaDocuments && !deltaQuestions) {
+      return null;
+    }
+
+    return prisma.$executeRaw`
+      UPDATE mst_subjects
+      SET
+        total_videos = GREATEST(COALESCE(total_videos, 0) + ${deltaVideos}, 0),
+        total_documents = GREATEST(COALESCE(total_documents, 0) + ${deltaDocuments}, 0),
+        total_questions = GREATEST(COALESCE(total_questions, 0) + ${deltaQuestions}, 0),
+        updated_at_utc = NOW()
+      WHERE subject_id = ${courseId}::uuid
+    `;
+  },
+
   // ──────────────── CHAPTERS ────────────────
 
   async findChapterById(chapterId) {
+    return prisma.mst_chapters.findUnique({
+      where: { chapter_id: chapterId },
+      select: {
+        chapter_id: true,
+        chapter_code: true,
+        chapter_name: true,
+        course_id: true,
+        is_active: true,
+        display_order: true,
+      },
+    });
+  },
+
+  async findChapterByIdWithLessons(chapterId) {
     return prisma.mst_chapters.findUnique({
       where: { chapter_id: chapterId },
       include: {

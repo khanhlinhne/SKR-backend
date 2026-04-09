@@ -161,6 +161,7 @@ const userService = {
     const userWithRoles = await userRepository.findByIdWithRoles(targetUserId);
     return userDto.toProfileResponse(userWithRoles);
   },
+
   async getAllUsers(query) {
     const page = Math.max(parseInt(query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 10, 1), 100);
