@@ -37,6 +37,7 @@ const userController = {
       next(err);
     }
   },
+
   async getAllUsers(req, res, next) {
     try {
       const data = await userService.getAllUsers(req.query);
