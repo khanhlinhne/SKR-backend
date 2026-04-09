@@ -353,9 +353,10 @@ const quizService = {
     if (practice) {
       const currentAttemptsCount = Number(practice.attempts_count ?? 0);
       const newAttemptsCount = currentAttemptsCount + 1;
-      const bestScore = practice.best_score != null ? Math.max(Number(practice.best_score), scoreAchieved) : scoreAchieved;
+      // Lưu theo % (0–100) để hiển thị đúng, không phải điểm thô
+      const bestScore = practice.best_score != null ? Math.max(Number(practice.best_score), percentageScore) : percentageScore;
       const currentAvg = practice.average_score != null ? Number(practice.average_score) : 0;
-      const newAverage = (currentAvg * currentAttemptsCount + scoreAchieved) / newAttemptsCount;
+      const newAverage = (currentAvg * currentAttemptsCount + percentageScore) / newAttemptsCount;
 
       await quizRepository.updatePracticeTest(attempt.quiz_type, {
         attemptsCount: newAttemptsCount,

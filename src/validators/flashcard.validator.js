@@ -1,5 +1,14 @@
 const { body, param, query } = require("express-validator");
 
+const isValidImageLocation = (value) => {
+  if (value == null) return true;
+  const input = String(value).trim();
+  if (!input) return true;
+  if (input.startsWith("/")) return true;
+  if (input.startsWith("./") || input.startsWith("../")) return true;
+  return /^https?:\/\//i.test(input);
+};
+
 const createSetRules = [
   body("setTitle")
     .trim()
@@ -95,6 +104,19 @@ const submitStudyReviewRules = [
     .withMessage("timeToAnswerSeconds must be a non-negative integer"),
 ];
 
+const submitStudyReviewBatchRules = [
+  param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+  param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),
+  body("reviews")
+    .isArray({ min: 1, max: 50 })
+    .withMessage("reviews must be an array with 1-50 items"),
+  body("reviews.*.flashcardItemId")
+    .isUUID()
+    .withMessage("Each review flashcardItemId must be a valid UUID"),
+  body("reviews.*.result")
+    .isIn(["correct", "incorrect", "skip"])
+    .withMessage("Each review result must be correct, incorrect or skip"),
+];
 const completeStudySessionRules = [
   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
   param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),
@@ -113,21 +135,66 @@ const createItemRules = [
   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
   body("frontText").trim().notEmpty().withMessage("frontText is required"),
   body("backText").trim().notEmpty().withMessage("backText is required"),
-  body("frontImageUrl").optional().trim().isURL().withMessage("frontImageUrl must be a valid URL"),
-  body("backImageUrl").optional().trim().isURL().withMessage("backImageUrl must be a valid URL"),
+  body("frontImageUrl")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("frontImageUrl must be an absolute URL or a relative path"),
+  body("backImageUrl")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("backImageUrl must be an absolute URL or a relative path"),
+  body("frontImage")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("frontImage must be an absolute URL or a relative path"),
+  body("backImage")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("backImage must be an absolute URL or a relative path"),
+  body("frontMediaUrl")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("frontMediaUrl must be an absolute URL or a relative path"),
+  body("backMediaUrl")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("backMediaUrl must be an absolute URL or a relative path"),
   body("cardOrder").optional().isInt({ min: 0 }).withMessage("cardOrder must be a non-negative integer"),
   body("hintText").optional().trim().isLength({ max: 500 }).withMessage("hintText too long"),
   body("easeFactor").optional().isFloat({ min: 1.3, max: 5 }).withMessage("easeFactor must be between 1.3 and 5"),
   body("intervalDays").optional().isInt({ min: 0 }).withMessage("intervalDays must be non-negative"),
 ];
 
+
 const updateItemRules = [
   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
   param("itemId").isUUID().withMessage("Flashcard item ID must be a valid UUID"),
   body("frontText").optional().trim().notEmpty().withMessage("frontText cannot be empty"),
   body("backText").optional().trim().notEmpty().withMessage("backText cannot be empty"),
-  body("frontImageUrl").optional().trim().isURL().withMessage("frontImageUrl must be a valid URL"),
-  body("backImageUrl").optional().trim().isURL().withMessage("backImageUrl must be a valid URL"),
+  body("frontImageUrl")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("frontImageUrl must be an absolute URL or a relative path"),
+  body("backImageUrl")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("backImageUrl must be an absolute URL or a relative path"),
+  body("frontImage")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("frontImage must be an absolute URL or a relative path"),
+  body("backImage")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("backImage must be an absolute URL or a relative path"),
+  body("frontMediaUrl")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("frontMediaUrl must be an absolute URL or a relative path"),
+  body("backMediaUrl")
+    .optional({ nullable: true })
+    .custom(isValidImageLocation)
+    .withMessage("backMediaUrl must be an absolute URL or a relative path"),
   body("cardOrder").optional().isInt({ min: 0 }).withMessage("cardOrder must be a non-negative integer"),
   body("hintText").optional().trim().isLength({ max: 500 }).withMessage("hintText too long"),
   body("easeFactor").optional().isFloat({ min: 1.3, max: 5 }).withMessage("easeFactor must be between 1.3 and 5"),
@@ -144,6 +211,7 @@ module.exports = {
   getItemsRules,
   startStudySessionRules,
   submitStudyReviewRules,
+  submitStudyReviewBatchRules,
   completeStudySessionRules,
   itemIdParamRules,
   createItemRules,

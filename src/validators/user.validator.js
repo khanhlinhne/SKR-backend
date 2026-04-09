@@ -36,6 +36,7 @@ const createUserRules = [
     .isString().withMessage("Vai tro phai la chuoi"),
 ];
 
+
 const updateProfileRules = [
   body("username")
     .optional()
