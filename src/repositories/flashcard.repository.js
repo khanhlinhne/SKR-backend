@@ -404,17 +404,16 @@ const flashcardRepository = {
   },
 
   async refreshStudySessionStats(sessionId, totalCards, updatedBy) {
-    const [cardsReviewed, cardsMastered] = await prisma.$transaction([
-      prisma.lrn_flashcard_reviews.count({
-        where: { session_id: sessionId },
-      }),
-      prisma.lrn_flashcard_reviews.count({
-        where: {
-          session_id: sessionId,
-          was_correct: true,
-        },
-      }),
-    ]);
+    const agg = await prisma.$queryRaw`
+      SELECT
+        COUNT(*)::int AS "cardsReviewed",
+        COUNT(*) FILTER (WHERE was_correct = true)::int AS "cardsMastered"
+      FROM lrn_flashcard_reviews
+      WHERE session_id = ${sessionId}::uuid
+    `;
+    const row = agg[0] || { cardsReviewed: 0, cardsMastered: 0 };
+    const cardsReviewed = row.cardsReviewed;
+    const cardsMastered = row.cardsMastered;
 
     const cardsLearning = Math.max(cardsReviewed - cardsMastered, 0);
     const cardsNew = Math.max((totalCards ?? 0) - cardsReviewed, 0);
@@ -508,16 +507,15 @@ const flashcardRepository = {
   },
 
   async updateSetTotalCards(flashcardSetId, delta) {
-    const set = await prisma.cnt_flashcards.findUnique({
-      where: { flashcard_set_id: flashcardSetId },
-      select: { total_cards: true },
-    });
-    if (!set) return null;
-    const newTotal = Math.max(0, (set.total_cards ?? 0) + delta);
-    return prisma.cnt_flashcards.update({
-      where: { flashcard_set_id: flashcardSetId },
-      data: { total_cards: newTotal },
-    });
+    const d = Number(delta);
+    if (!Number.isFinite(d) || d === 0) return null;
+    const rows = await prisma.$queryRaw`
+      UPDATE cnt_flashcards
+      SET total_cards = GREATEST(0, COALESCE(total_cards, 0) + ${d})
+      WHERE flashcard_set_id = ${flashcardSetId}::uuid
+      RETURNING *
+    `;
+    return rows[0] ?? null;
   },
 };
 

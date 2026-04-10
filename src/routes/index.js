@@ -7,6 +7,9 @@ const flashcardRoutes = require("./flashcard.routes");
 const documentRoutes = require("./document.routes");
 const settingRoutes = require("./setting.routes");
 const packageRoutes = require("./package.routes");
+const aiGeminiRoutes = require("./ai-gemini.routes");
+const registrationAdminRoutes = require("./registration-admin.routes");
+const dashboardAdminRoutes = require("./dashboard-admin.routes");
 
 const router = Router();
 
@@ -18,5 +21,8 @@ router.use("/flashcard-sets", flashcardRoutes);
 router.use("/documents", documentRoutes);
 router.use("/settings", settingRoutes);
 router.use("/packages", packageRoutes);
+router.use("/ai-gemini", aiGeminiRoutes);
+router.use("/admin/registrations", registrationAdminRoutes);
+router.use("/admin/dashboard", dashboardAdminRoutes);
 
 module.exports = router;

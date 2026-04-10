@@ -249,6 +249,32 @@ const courseRepository = {
     });
   },
 
+  /**
+   * Chapters + lessons with content counts for list endpoints (avoids loading full course + creator).
+   */
+  async findChaptersWithLessonsForList(courseId) {
+    return prisma.mst_chapters.findMany({
+      where: { course_id: courseId, is_active: true },
+      orderBy: { display_order: "asc" },
+      include: {
+        mst_lessons: {
+          where: { is_active: true },
+          orderBy: { display_order: "asc" },
+          include: {
+            _count: {
+              select: {
+                cnt_videos: { where: { status: { not: "deleted" } } },
+                cnt_documents: { where: { status: { not: "deleted" } } },
+                cnt_questions: { where: { status: { not: "deleted" } } },
+                cnt_flashcards: { where: { status: { not: "archived" } } },
+              },
+            },
+          },
+        },
+      },
+    });
+  },
+
   async findChapterByCode(courseId, chapterCode) {
     return prisma.mst_chapters.findUnique({
       where: { course_id_chapter_code: { course_id: courseId, chapter_code: chapterCode } },

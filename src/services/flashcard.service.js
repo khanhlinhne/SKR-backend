@@ -447,7 +447,10 @@ const flashcardService = {
     const set = await flashcardRepository.findSetBasicById(flashcardSetId);
     await ensureSetReadableForUser(set, userId);
 
-    const session = await flashcardRepository.findStudySessionById(sessionId);
+    const [session, item] = await Promise.all([
+      flashcardRepository.findStudySessionById(sessionId),
+      flashcardRepository.findItemById(body.flashcardItemId),
+    ]);
     if (!session || session.flashcard_set_id !== flashcardSetId) {
       throw AppError.notFound("Study session not found");
     }
@@ -458,19 +461,20 @@ const flashcardService = {
       throw AppError.badRequest("This study session has already ended");
     }
 
-    const item = await flashcardRepository.findItemById(body.flashcardItemId);
     if (!item || item.flashcard_set_id !== flashcardSetId || item.status !== "active") {
       throw AppError.notFound("Flashcard item not found");
     }
 
-    const latestReview = await flashcardRepository.findLatestReviewByUserAndItem(userId, body.flashcardItemId);
+    const [latestReview, currentSessionReview] = await Promise.all([
+      flashcardRepository.findLatestReviewByUserAndItem(userId, body.flashcardItemId),
+      flashcardRepository.findSessionReviewByItem(sessionId, body.flashcardItemId),
+    ]);
     const schedule = buildReviewSchedule(
       body.result,
       latestReview?.new_ease_factor ?? item.ease_factor,
       latestReview?.new_interval_days ?? item.interval_days
     );
 
-    const currentSessionReview = await flashcardRepository.findSessionReviewByItem(sessionId, body.flashcardItemId);
     let review;
 
     const reviewPayload = {

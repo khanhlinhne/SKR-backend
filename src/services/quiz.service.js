@@ -376,12 +376,14 @@ const quizService = {
     if (!attempt) throw AppError.notFound("Attempt not found");
     if (attempt.status === "in_progress") throw AppError.badRequest("Quiz attempt is not submitted yet");
 
-    const practice = await quizRepository.findPracticeTestById(attempt.quiz_type);
-    const answers = await quizRepository.findAttemptAnswersWithQuestions(attemptId);
-    const questionIds = answers.map((a) => a.question_id);
-
-    const { questions: questionMeta } = await quizRepository.getQuestionsForScoring(questionIds);
-    const totalPointsPossible = questionMeta.reduce((sum, q) => sum + Number(q.points ?? 1), 0);
+    const [practice, answers] = await Promise.all([
+      quizRepository.findPracticeTestById(attempt.quiz_type),
+      quizRepository.findAttemptAnswersWithQuestions(attemptId),
+    ]);
+    const totalPointsPossible = answers.reduce(
+      (sum, a) => sum + Number(a.cnt_questions?.points ?? 1),
+      0
+    );
 
     const scoreAchieved = attempt.score_achieved != null ? Number(attempt.score_achieved) : null;
     const percentageScore = attempt.percentage_score != null ? Number(attempt.percentage_score) : null;
