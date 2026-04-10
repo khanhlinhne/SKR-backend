@@ -2,21 +2,12 @@ const swaggerJsdoc = require("swagger-jsdoc");
 const path = require("path");
 
 function getServers() {
-  if (process.env.VERCEL) {
-    return [
-      {
-        url: "/",
-        description: "Current server",
-      },
-    ];
-  }
+  // Relative URL so Swagger "Try it out" hits the same host as the docs page
+  // (avoids localhost vs 127.0.0.1 mismatch and empty/broken response panels).
   return [
     {
-      url: "http://localhost:{port}",
-      description: "Development server",
-      variables: {
-        port: { default: process.env.PORT || "5000" },
-      },
+      url: "/",
+      description: process.env.VERCEL ? "Current server" : "Same origin as this page",
     },
   ];
 }

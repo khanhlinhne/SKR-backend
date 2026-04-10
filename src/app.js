@@ -89,6 +89,11 @@ if (process.env.VERCEL) {
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     customSiteTitle: "SKR System API Docs",
     customCss: ".swagger-ui .topbar { display: none }",
+    swaggerOptions: {
+      persistAuthorization: true,
+      tryItOutEnabled: true,
+      displayRequestDuration: true,
+    },
   }));
 }
 

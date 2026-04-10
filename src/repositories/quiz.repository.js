@@ -252,7 +252,7 @@ const quizRepository = {
 
   async selectCandidateQuestionsForPractice(practice) {
     // NOTE: we randomize in application code (shuffle + slice) to avoid SQL-specific random.
-    const candidateLimit = Math.min(500, Math.max((practice.totalQuestions ?? 0) * 10, 50));
+    const candidateLimit = Math.min(200, Math.max((practice.totalQuestions ?? 0) * 8, 40));
     const totalQuestions = practice.totalQuestions;
 
     const where = {

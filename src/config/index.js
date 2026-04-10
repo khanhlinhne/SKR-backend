@@ -1,5 +1,18 @@
 require("dotenv").config();
 
+/** Empty / auto / latest → resolve newest Flash via Gemini models.list API */
+function geminiModelFromEnv() {
+  const raw = process.env.GEMINI_MODEL;
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return "auto";
+  }
+  const t = String(raw).trim().toLowerCase();
+  if (t === "auto" || t === "latest") {
+    return "auto";
+  }
+  return String(raw).trim();
+}
+
 const config = {
   port: parseInt(process.env.PORT, 10) || 5000,
   nodeEnv: process.env.NODE_ENV || "development",
@@ -31,6 +44,17 @@ const config = {
 
   imgbb: {
     apiKey: process.env.IMGBB_API_KEY,
+  },
+
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY,
+    /** "auto" = pick newest gemini-*-flash from models.list (see ai-gemini.service) */
+    model: geminiModelFromEnv(),
+    /**
+     * UUID of an existing mst_users row. When set, POST /generate-questions without Bearer
+     * still persists rows under this user so GET /generations lists them for everyone.
+     */
+    publicGenerationOwnerUserId: process.env.AI_PUBLIC_GENERATION_OWNER_USER_ID?.trim() || null,
   },
 };
 
