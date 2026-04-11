@@ -15,6 +15,73 @@ const quizPracticeIdParamRules = [param("practiceTestId").isUUID().withMessage("
 const createQuizPracticeRules = [
   body("testTitle").trim().notEmpty().withMessage("testTitle is required").isLength({ max: 255 }).withMessage("testTitle must not exceed 255 characters"),
   body("testDescription").optional().trim().isLength({ max: 2000 }).withMessage("testDescription must not exceed 2000 characters"),
+  body("aiGenerationId").optional().isUUID().withMessage("aiGenerationId must be a valid UUID"),
+  body("manualQuestions")
+    .optional()
+    .isArray({ min: 1, max: 100 })
+    .withMessage("manualQuestions must be an array with 1-100 items"),
+  body("manualQuestions.*.questionText")
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage("manualQuestions.questionText is required")
+    .isLength({ max: 5000 })
+    .withMessage("manualQuestions.questionText must not exceed 5000 characters"),
+  body("manualQuestions.*.questionType")
+    .optional()
+    .isIn(QUESTION_TYPES)
+    .withMessage(`manualQuestions.questionType must be one of: ${QUESTION_TYPES.join(", ")}`),
+  body("manualQuestions.*.questionExplanation")
+    .optional()
+    .isString()
+    .isLength({ max: 5000 })
+    .withMessage("manualQuestions.questionExplanation must not exceed 5000 characters"),
+  body("manualQuestions.*.difficultyLevel")
+    .optional()
+    .isIn(DIFFICULTY_LEVELS)
+    .withMessage(`manualQuestions.difficultyLevel must be one of: ${DIFFICULTY_LEVELS.join(", ")}`),
+  body("manualQuestions.*.points")
+    .optional()
+    .isFloat({ min: 0.01 })
+    .withMessage("manualQuestions.points must be greater than 0"),
+  body("manualQuestions.*.timeLimitSeconds")
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage("manualQuestions.timeLimitSeconds must be a positive integer"),
+  body("manualQuestions.*.correctAnswers")
+    .optional()
+    .isArray({ min: 1, max: 20 })
+    .withMessage("manualQuestions.correctAnswers must be an array"),
+  body("manualQuestions.*.correctAnswers.*")
+    .optional()
+    .isString()
+    .withMessage("manualQuestions.correctAnswers items must be strings")
+    .isLength({ max: 1000 })
+    .withMessage("manualQuestions.correctAnswers items must not exceed 1000 characters"),
+  body("manualQuestions.*.options")
+    .optional()
+    .isArray({ min: 1, max: 20 })
+    .withMessage("manualQuestions.options must be an array"),
+  body("manualQuestions.*.options.*.optionText")
+    .optional()
+    .isString()
+    .withMessage("manualQuestions.options.optionText must be a string")
+    .isLength({ max: 1000 })
+    .withMessage("manualQuestions.options.optionText must not exceed 1000 characters"),
+  body("manualQuestions.*.options.*.isCorrect")
+    .optional()
+    .isBoolean()
+    .withMessage("manualQuestions.options.isCorrect must be a boolean"),
+  body("manualQuestions.*.options.*.optionOrder")
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage("manualQuestions.options.optionOrder must be a non-negative integer"),
+  body("manualQuestions.*.options.*.optionExplanation")
+    .optional()
+    .isString()
+    .withMessage("manualQuestions.options.optionExplanation must be a string")
+    .isLength({ max: 5000 })
+    .withMessage("manualQuestions.options.optionExplanation must not exceed 5000 characters"),
   body("courseIds")
     .optional()
     .isArray({ min: 1 })
@@ -36,7 +103,7 @@ const createQuizPracticeRules = [
     .bail()
     .custom((arr) => arr.every((v) => QUESTION_TYPES.includes(v)))
     .withMessage(`questionTypes items must be one of: ${QUESTION_TYPES.join(", ")}`),
-  body("totalQuestions").isInt({ min: 1 }).withMessage("totalQuestions must be a positive integer"),
+  body("totalQuestions").optional().isInt({ min: 1 }).withMessage("totalQuestions must be a positive integer"),
   body("timeLimitMinutes").optional().isInt({ min: 1 }).withMessage("timeLimitMinutes must be a positive integer"),
   body("randomizeQuestions").optional().isBoolean().withMessage("randomizeQuestions must be a boolean"),
   body("randomizeOptions").optional().isBoolean().withMessage("randomizeOptions must be a boolean"),

@@ -64,10 +64,11 @@ router.get("/", authenticate, getQuizPracticesRules, validate, quizController.ge
  *         application/json:
  *           schema:
  *             type: object
- *             required: [testTitle, totalQuestions]
+ *             required: [testTitle]
  *             properties:
  *               testTitle: { type: string, maxLength: 255 }
  *               testDescription: { type: string, nullable: true }
+ *               aiGenerationId: { type: string, format: uuid, nullable: true }
  *               courseIds:
  *                 type: array
  *                 items: { type: string, format: uuid }
@@ -77,11 +78,36 @@ router.get("/", authenticate, getQuizPracticesRules, validate, quizController.ge
  *               questionTypes:
  *                 type: array
  *                 items: { type: string, enum: [multiple_choice, true_false, essay, short_answer, fill_in_blank] }
- *               totalQuestions: { type: integer, minimum: 1 }
+ *               totalQuestions: { type: integer, minimum: 1, nullable: true }
  *               timeLimitMinutes: { type: integer, minimum: 1, nullable: true }
  *               randomizeQuestions: { type: boolean }
  *               randomizeOptions: { type: boolean }
  *               showCorrectAnswers: { type: boolean }
+ *               manualQuestions:
+ *                 type: array
+ *                 description: Optional inline questions for this practice (frontend can map typed or uploaded questions here)
+ *                 items:
+ *                   type: object
+ *                   required: [questionText]
+ *                   properties:
+ *                     questionText: { type: string }
+ *                     questionType: { type: string, enum: [multiple_choice, true_false, essay, short_answer, fill_in_blank] }
+ *                     difficultyLevel: { type: string, enum: [easy, medium, hard, expert] }
+ *                     questionExplanation: { type: string, nullable: true }
+ *                     points: { type: number, minimum: 0.01 }
+ *                     timeLimitSeconds: { type: integer, minimum: 1, nullable: true }
+ *                     correctAnswers:
+ *                       type: array
+ *                       items: { type: string }
+ *                     options:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           optionText: { type: string }
+ *                           isCorrect: { type: boolean }
+ *                           optionOrder: { type: integer, minimum: 0 }
+ *                           optionExplanation: { type: string, nullable: true }
  *     responses:
  *       201:
  *         description: Quiz practice created successfully

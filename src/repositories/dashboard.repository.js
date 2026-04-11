@@ -125,9 +125,20 @@ const dashboardRepository = {
         order_code: true,
         total_amount: true,
         currency_code: true,
+        customer_name: true,
+        customer_email: true,
         payment_status: true,
         created_at_utc: true,
         paid_at_utc: true,
+        mst_users: {
+          select: {
+            user_id: true,
+            full_name: true,
+            display_name: true,
+            email: true,
+            avatar_url: true,
+          },
+        },
         pmt_order_items: {
           take: 3,
           select: {

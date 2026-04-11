@@ -1,5 +1,6 @@
 const AppError = require("../utils/AppError");
 const quizRepository = require("../repositories/quiz.repository");
+const aiQuestionGenerationRepository = require("../repositories/ai-question-generation.repository");
 
 function shuffleArray(arr) {
   const a = [...arr];
@@ -39,6 +40,221 @@ function computeIsCorrect({ questionType, userSelectedOptionIds, userAnswerText,
   if (!userText) return false;
 
   return correctOptionTexts.some((t) => normalizeText(t) === userText);
+}
+
+const VALID_QUESTION_TYPES = new Set(["multiple_choice", "true_false", "essay", "short_answer", "fill_in_blank"]);
+const VALID_DIFFICULTY_LEVELS = new Set(["easy", "medium", "hard", "expert"]);
+const OPTION_BASED_TYPES = new Set(["multiple_choice", "true_false"]);
+const TEXT_BASED_TYPES = new Set(["essay", "short_answer", "fill_in_blank"]);
+
+function normalizeOptionalString(value) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function normalizePositiveInteger(value, fieldName, { allowNull = true } = {}) {
+  if (value === undefined || value === null || value === "") {
+    if (allowNull) return null;
+    throw AppError.badRequest(`${fieldName} is required`);
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw AppError.badRequest(`${fieldName} must be a positive integer`);
+  }
+
+  return parsed;
+}
+
+function normalizePositiveNumber(value, fieldName, { allowNull = true } = {}) {
+  if (value === undefined || value === null || value === "") {
+    if (allowNull) return null;
+    throw AppError.badRequest(`${fieldName} is required`);
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw AppError.badRequest(`${fieldName} must be greater than 0`);
+  }
+
+  return parsed;
+}
+
+function normalizeQuestionType(value, fieldName) {
+  const normalized = normalizeOptionalString(value)?.toLowerCase();
+  if (!normalized) return "multiple_choice";
+  if (!VALID_QUESTION_TYPES.has(normalized)) {
+    throw AppError.badRequest(`${fieldName} is invalid`);
+  }
+  return normalized;
+}
+
+function normalizeDifficultyLevel(value, fieldName) {
+  const normalized = normalizeOptionalString(value)?.toLowerCase();
+  if (!normalized) return "medium";
+  if (!VALID_DIFFICULTY_LEVELS.has(normalized)) {
+    throw AppError.badRequest(`${fieldName} is invalid`);
+  }
+  return normalized;
+}
+
+function coerceBoolean(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = normalizeText(value);
+    if (["true", "1", "yes", "y", "dung", "đúng"].includes(normalized)) return true;
+    if (["false", "0", "no", "n", "sai"].includes(normalized)) return false;
+  }
+  return null;
+}
+
+function normalizeOption(rawOption, optionIndex, questionIndex) {
+  const optionText = normalizeOptionalString(rawOption?.optionText ?? rawOption?.text);
+  if (!optionText) {
+    throw AppError.badRequest(`manualQuestions[${questionIndex}].options[${optionIndex}].optionText is required`);
+  }
+
+  const orderValue = rawOption?.optionOrder ?? rawOption?.order;
+  const parsedOrder = orderValue === undefined || orderValue === null || orderValue === "" ? optionIndex : Number.parseInt(orderValue, 10);
+  if (!Number.isInteger(parsedOrder) || parsedOrder < 0) {
+    throw AppError.badRequest(`manualQuestions[${questionIndex}].options[${optionIndex}].optionOrder must be a non-negative integer`);
+  }
+
+  return {
+    optionText,
+    optionOrder: parsedOrder,
+    isCorrect: coerceBoolean(rawOption?.isCorrect ?? rawOption?.correct) ?? false,
+    optionExplanation: normalizeOptionalString(rawOption?.optionExplanation ?? rawOption?.explanation),
+  };
+}
+
+function buildTrueFalseOptions(rawQuestion, questionIndex) {
+  const rawCorrect = rawQuestion?.correctAnswer ?? rawQuestion?.answer ?? rawQuestion?.correct;
+  const isTrueAnswer = coerceBoolean(rawCorrect);
+  if (isTrueAnswer == null) {
+    throw AppError.badRequest(`manualQuestions[${questionIndex}] true_false questions require options or correctAnswer`);
+  }
+
+  return [
+    { optionText: "Đúng", optionOrder: 0, isCorrect: isTrueAnswer, optionExplanation: null },
+    { optionText: "Sai", optionOrder: 1, isCorrect: !isTrueAnswer, optionExplanation: null },
+  ];
+}
+
+function buildTextAnswerOptions(rawQuestion, questionIndex) {
+  const rawAnswers = rawQuestion?.correctAnswers ?? rawQuestion?.acceptedAnswers;
+  const answerList = Array.isArray(rawAnswers) ? rawAnswers : [rawQuestion?.correctAnswer ?? rawQuestion?.answer];
+  const normalizedAnswers = answerList
+    .map((answer) => normalizeOptionalString(answer))
+    .filter(Boolean);
+
+  if (!normalizedAnswers.length) {
+    throw AppError.badRequest(`manualQuestions[${questionIndex}] requires at least one accepted answer`);
+  }
+
+  return normalizedAnswers.map((answer, idx) => ({
+    optionText: answer,
+    optionOrder: idx,
+    isCorrect: true,
+    optionExplanation: null,
+  }));
+}
+
+function applyCorrectAnswerFallback(questionType, options, rawQuestion, questionIndex) {
+  if (!OPTION_BASED_TYPES.has(questionType)) {
+    return options;
+  }
+
+  if (options.some((option) => option.isCorrect)) {
+    return options;
+  }
+
+  const rawCorrect = rawQuestion?.correctAnswer ?? rawQuestion?.answer ?? rawQuestion?.correctOption ?? rawQuestion?.correctOptionText;
+  if (rawCorrect === undefined || rawCorrect === null || rawCorrect === "") {
+    return options;
+  }
+
+  const nextOptions = options.map((option) => ({ ...option }));
+  const numericIndex = Number.parseInt(rawCorrect, 10);
+  if (String(rawCorrect).trim() !== "" && Number.isInteger(numericIndex) && numericIndex >= 0 && numericIndex < nextOptions.length) {
+    nextOptions[numericIndex].isCorrect = true;
+    return nextOptions;
+  }
+
+  const matched = nextOptions.find((option) => normalizeText(option.optionText) === normalizeText(rawCorrect));
+  if (matched) {
+    matched.isCorrect = true;
+    return nextOptions;
+  }
+
+  throw AppError.badRequest(`manualQuestions[${questionIndex}] correctAnswer does not match any option`);
+}
+
+function normalizeQuestionOptions(questionType, rawQuestion, questionIndex) {
+  let options = Array.isArray(rawQuestion?.options)
+    ? rawQuestion.options.map((option, optionIndex) => normalizeOption(option, optionIndex, questionIndex))
+    : [];
+
+  if (!options.length && questionType === "true_false") {
+    options = buildTrueFalseOptions(rawQuestion, questionIndex);
+  }
+
+  if (!options.length && TEXT_BASED_TYPES.has(questionType)) {
+    options = buildTextAnswerOptions(rawQuestion, questionIndex);
+  }
+
+  options = applyCorrectAnswerFallback(questionType, options, rawQuestion, questionIndex);
+
+  if (OPTION_BASED_TYPES.has(questionType)) {
+    if (options.length < 2) {
+      throw AppError.badRequest(`manualQuestions[${questionIndex}] must contain at least 2 options`);
+    }
+    if (!options.some((option) => option.isCorrect)) {
+      throw AppError.badRequest(`manualQuestions[${questionIndex}] must contain at least 1 correct option`);
+    }
+  }
+
+  if (TEXT_BASED_TYPES.has(questionType) && !options.some((option) => option.isCorrect && normalizeOptionalString(option.optionText))) {
+    throw AppError.badRequest(`manualQuestions[${questionIndex}] must contain at least 1 accepted answer`);
+  }
+
+  return options;
+}
+
+function normalizeCustomQuestion(rawQuestion, questionIndex) {
+  const questionText = normalizeOptionalString(rawQuestion?.questionText ?? rawQuestion?.text);
+  if (!questionText) {
+    throw AppError.badRequest(`manualQuestions[${questionIndex}].questionText is required`);
+  }
+
+  const questionType = normalizeQuestionType(rawQuestion?.questionType ?? rawQuestion?.type, `manualQuestions[${questionIndex}].questionType`);
+  const options = normalizeQuestionOptions(questionType, rawQuestion, questionIndex);
+
+  return {
+    questionType,
+    questionText,
+    questionExplanation: normalizeOptionalString(rawQuestion?.questionExplanation ?? rawQuestion?.explanation),
+    difficultyLevel: normalizeDifficultyLevel(rawQuestion?.difficultyLevel ?? rawQuestion?.difficulty, `manualQuestions[${questionIndex}].difficultyLevel`),
+    points: normalizePositiveNumber(rawQuestion?.points, `manualQuestions[${questionIndex}].points`) ?? 1,
+    timeLimitSeconds: normalizePositiveInteger(rawQuestion?.timeLimitSeconds ?? rawQuestion?.timeLimit, `manualQuestions[${questionIndex}].timeLimitSeconds`) ?? null,
+    options,
+  };
+}
+
+function normalizeCustomQuestions(rawQuestions) {
+  if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
+    throw AppError.badRequest("manualQuestions must be a non-empty array");
+  }
+
+  return rawQuestions.map((question, index) => normalizeCustomQuestion(question, index));
+}
+
+function deriveQuestionMetadata(questions) {
+  return {
+    questionTypes: [...new Set(questions.map((question) => question.questionType))],
+    difficultyLevels: [...new Set(questions.map((question) => question.difficultyLevel).filter(Boolean))],
+  };
 }
 
 const quizService = {
@@ -109,14 +325,55 @@ const quizService = {
   async createQuizPractice(userId, body) {
     if (!userId) throw AppError.unauthorized("Authentication required.");
 
-    const created = await quizRepository.createPracticeTest({
+    if (Array.isArray(body.manualQuestions) && body.manualQuestions.length > 0 && body.aiGenerationId) {
+      throw AppError.badRequest("Use either manualQuestions or aiGenerationId, not both");
+    }
+
+    let customQuestions = [];
+    let questionSourceMode = "question_bank";
+    let aiGenerationId = null;
+
+    if (Array.isArray(body.manualQuestions) && body.manualQuestions.length > 0) {
+      customQuestions = normalizeCustomQuestions(body.manualQuestions);
+      questionSourceMode = "manual";
+    } else if (body.aiGenerationId) {
+      const generation = await aiQuestionGenerationRepository.findByIdForUser(body.aiGenerationId, userId);
+      if (!generation) {
+        throw AppError.notFound("AI question generation not found");
+      }
+
+      const generatedQuestions = Array.isArray(generation.generated_questions) ? generation.generated_questions : [];
+      if (!generatedQuestions.length) {
+        throw AppError.badRequest("AI question generation does not contain any questions");
+      }
+
+      customQuestions = normalizeCustomQuestions(generatedQuestions);
+      questionSourceMode = "ai_generation";
+      aiGenerationId = generation.generation_id;
+    }
+
+    const totalQuestions = body.totalQuestions != null
+      ? normalizePositiveInteger(body.totalQuestions, "totalQuestions", { allowNull: false })
+      : customQuestions.length || null;
+
+    if (!totalQuestions) {
+      throw AppError.badRequest("totalQuestions is required when manualQuestions or aiGenerationId is not provided");
+    }
+
+    if (customQuestions.length > 0 && totalQuestions > customQuestions.length) {
+      throw AppError.badRequest("totalQuestions cannot exceed the number of imported/manual questions");
+    }
+
+    const derivedMetadata = customQuestions.length > 0 ? deriveQuestionMetadata(customQuestions) : { questionTypes: null, difficultyLevels: null };
+
+    const practicePayload = {
       userId,
       testTitle: body.testTitle,
       testDescription: body.testDescription,
       courseIds: body.courseIds ?? null,
-      difficultyLevels: body.difficultyLevels ?? null,
-      questionTypes: body.questionTypes ?? null,
-      totalQuestions: body.totalQuestions,
+      difficultyLevels: body.difficultyLevels ?? derivedMetadata.difficultyLevels ?? null,
+      questionTypes: body.questionTypes ?? derivedMetadata.questionTypes ?? null,
+      totalQuestions,
       timeLimitMinutes: body.timeLimitMinutes ?? null,
       randomizeQuestions: body.randomizeQuestions ?? true,
       randomizeOptions: body.randomizeOptions ?? true,
@@ -127,7 +384,24 @@ const quizService = {
       averageScore: null,
       lastAttemptAtUtc: null,
       createdBy: userId,
-    });
+    };
+
+    const created = customQuestions.length > 0
+      ? await quizRepository.createPracticeTestWithScopedQuestions({
+          practice: practicePayload,
+          scopedQuestions: {
+            questions: customQuestions,
+            sourceType: questionSourceMode,
+            sourceGenerationId: aiGenerationId,
+          },
+        })
+      : await quizRepository.createPracticeTest(practicePayload);
+
+    created.questionSourceMode = questionSourceMode;
+    created.customQuestionCount = customQuestions.length || 0;
+    if (aiGenerationId) {
+      created.aiGenerationId = aiGenerationId;
+    }
 
     return created;
   },
@@ -178,12 +452,15 @@ const quizService = {
     if (!practice || practice.status === "deleted") throw AppError.notFound("Quiz practice not found");
     if (practice.user_id !== userId) throw AppError.forbidden("You can only start attempts for your own quiz practices");
 
-    const { questions: candidateQuestions } = await quizRepository.selectCandidateQuestionsForPractice({
-      totalQuestions: practice.total_questions,
-      courseIds: practice.course_ids ?? null,
-      difficultyLevels: practice.difficulty_levels ?? null,
-      questionTypes: practice.question_types ?? null,
-    });
+    const practiceScopedQuestions = await quizRepository.findPracticeScopedQuestions(practiceTestId);
+    const candidateQuestions = practiceScopedQuestions.length > 0
+      ? practiceScopedQuestions
+      : (await quizRepository.selectCandidateQuestionsForPractice({
+          totalQuestions: practice.total_questions,
+          courseIds: practice.course_ids ?? null,
+          difficultyLevels: practice.difficulty_levels ?? null,
+          questionTypes: practice.question_types ?? null,
+        })).questions;
 
     if (!Array.isArray(candidateQuestions) || candidateQuestions.length < practice.total_questions) {
       throw AppError.conflict("Not enough questions to generate this quiz practice");
