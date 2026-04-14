@@ -27,8 +27,20 @@ class AppError extends Error {
     return new AppError(message, 409);
   }
 
+  static tooManyRequests(message = "Too many requests") {
+    return new AppError(message, 429);
+  }
+
   static internal(message = "Internal server error") {
     return new AppError(message, 500);
+  }
+
+  static badGateway(message = "Bad gateway") {
+    return new AppError(message, 502);
+  }
+
+  static serviceUnavailable(message = "Service unavailable") {
+    return new AppError(message, 503);
   }
 }
 

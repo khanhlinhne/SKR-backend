@@ -97,6 +97,19 @@ const flashcardController = {
     }
   },
 
+  async submitStudyReviewBatch(req, res, next) {
+    try {
+      const data = await flashcardService.submitStudyReviewBatch(
+        req.params.setId,
+        req.params.sessionId,
+        req.user?.userId,
+        req.body
+      );
+      return success(res, { message: "Flashcard batch progress saved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
   async completeStudySession(req, res, next) {
     try {
       const data = await flashcardService.completeStudySession(

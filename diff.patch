@@ -1,0 +1,416 @@
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index c21a97f..a27904a 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -196,6 +196,7 @@ model cnt_flashcard_items {
+ 
+   @@index([card_order], map: "idx_flashcard_items_order")
+   @@index([flashcard_set_id], map: "idx_flashcard_items_set")
++  @@index([flashcard_set_id, status], map: "idx_flashcard_items_set_status")
+ }
+ 
+ model cnt_flashcards {
+@@ -395,6 +396,8 @@ model lrn_flashcard_reviews {
+   @@index([next_review_at_utc], map: "idx_flashcard_reviews_next_review")
+   @@index([session_id], map: "idx_flashcard_reviews_session")
+   @@index([user_id], map: "idx_flashcard_reviews_user")
++  @@index([user_id, flashcard_item_id, created_at_utc(sort: Desc)], map: "idx_flashcard_reviews_user_item")
++  @@index([session_id, flashcard_item_id], map: "idx_flashcard_reviews_session_item")
+ }
+ 
+ model lrn_flashcard_sessions {
+diff --git a/src/controllers/flashcard.controller.js b/src/controllers/flashcard.controller.js
+index 98fb6ca..360154f 100644
+--- a/src/controllers/flashcard.controller.js
++++ b/src/controllers/flashcard.controller.js
+@@ -97,6 +97,20 @@ const flashcardController = {
+     }
+   },
+ 
++  async submitStudyReviewBatch(req, res, next) {
++    try {
++      const data = await flashcardService.submitStudyReviewBatch(
++        req.params.setId,
++        req.params.sessionId,
++        req.user?.userId,
++        req.body
++      );
++      return success(res, { message: "Flashcard batch progress saved successfully", data });
++    } catch (err) {
++      next(err);
++    }
++  },
++
+   async completeStudySession(req, res, next) {
+     try {
+       const data = await flashcardService.completeStudySession(
+diff --git a/src/repositories/flashcard.repository.js b/src/repositories/flashcard.repository.js
+index 0487c58..f6ba76c 100644
+--- a/src/repositories/flashcard.repository.js
++++ b/src/repositories/flashcard.repository.js
+@@ -1,6 +1,10 @@
+ const prisma = require("../config/prisma");
+ 
+ const flashcardRepository = {
++  /**
++   * Full load: set + all active items + creator info.
++   * Use only when you actually need the items (e.g. getItems, getSetById detail).
++   */
+   async findSetById(flashcardSetId) {
+     return prisma.cnt_flashcards.findUnique({
+       where: { flashcard_set_id: flashcardSetId },
+@@ -21,6 +25,50 @@ const flashcardRepository = {
+     });
+   },
+ 
++  /**
++   * Lightweight load: set metadata only (no items, no user join).
++   * Use for permission checks, submit reviews, etc.
++   */
++  async findSetBasicById(flashcardSetId) {
++    return prisma.cnt_flashcards.findUnique({
++      where: { flashcard_set_id: flashcardSetId },
++      select: {
++        flashcard_set_id: true,
++        creator_id: true,
++        visibility: true,
++        status: true,
++        total_cards: true,
++      },
++    });
++  },
++
++  /**
++   * Batch insert multiple reviews in a single transaction.
++   */
++  async createManyStudyReviews(reviewsData) {
++    return prisma.$transaction(
++      reviewsData.map((data) =>
++        prisma.lrn_flashcard_reviews.create({
++          data: {
++            session_id: data.sessionId,
++            user_id: data.userId,
++            flashcard_item_id: data.flashcardItemId,
++            user_rating: data.userRating,
++            was_correct: data.wasCorrect,
++            time_to_answer_seconds: data.timeToAnswerSeconds ?? 0,
++            previous_ease_factor: data.previousEaseFactor,
++            new_ease_factor: data.newEaseFactor,
++            previous_interval_days: data.previousIntervalDays ?? 0,
++            new_interval_days: data.newIntervalDays ?? 0,
++            next_review_at_utc: data.nextReviewAtUtc,
++            created_by: data.createdBy,
++            status: data.status ?? "completed",
++          },
++        })
++      )
++    );
++  },
++
+   async findPublicSets({ courseId, search, orderBy, skip, take }) {
+     const where = {
+       visibility: "public",
+diff --git a/src/routes/flashcard.routes.js b/src/routes/flashcard.routes.js
+index 0af9bfb..4913805 100644
+--- a/src/routes/flashcard.routes.js
++++ b/src/routes/flashcard.routes.js
+@@ -10,6 +10,7 @@ const {
+   getItemsRules,
+   startStudySessionRules,
+   submitStudyReviewRules,
++  submitStudyReviewBatchRules,
+   completeStudySessionRules,
+   itemIdParamRules,
+   createItemRules,
+@@ -116,6 +117,12 @@ router.post(
+   validate,
+   flashcardController.startStudySession
+ );
++router.post(
++  "/:setId/study-sessions/:sessionId/reviews/batch",
++  submitStudyReviewBatchRules,
++  validate,
++  flashcardController.submitStudyReviewBatch
++);
+ router.post(
+   "/:setId/study-sessions/:sessionId/reviews",
+   submitStudyReviewRules,
+diff --git a/src/services/flashcard.service.js b/src/services/flashcard.service.js
+index 290c6f2..dcf65d6 100644
+--- a/src/services/flashcard.service.js
++++ b/src/services/flashcard.service.js
+@@ -373,10 +373,11 @@ const flashcardService = {
+       throw AppError.unauthorized("Authentication required to start a study session.");
+     }
+ 
+-    const set = await flashcardRepository.findSetById(flashcardSetId);
++    // Use lightweight query - total_cards is already stored on the set
++    const set = await flashcardRepository.findSetBasicById(flashcardSetId);
+     ensureSetReadable(set, userId);
+ 
+-    const totalCards = (set.cnt_flashcard_items || []).length;
++    const totalCards = set.total_cards ?? 0;
+     const session = await flashcardRepository.createStudySession({
+       userId,
+       flashcardSetId,
+@@ -398,7 +399,8 @@ const flashcardService = {
+       throw AppError.badRequest("result must be correct, incorrect or skip");
+     }
+ 
+-    const set = await flashcardRepository.findSetById(flashcardSetId);
++    // Use lightweight query - no need to load all items for a single review
++    const set = await flashcardRepository.findSetBasicById(flashcardSetId);
+     ensureSetReadable(set, userId);
+ 
+     const session = await flashcardRepository.findStudySessionById(sessionId);
+@@ -463,6 +465,209 @@ const flashcardService = {
+     };
+   },
+ 
++  /**
++   * Batch submit multiple reviews in one request.
++   * Drastically reduces DB round-trips: 1 set check + 1 session check + N reviews in 1 transaction.
++   */
++  async submitStudyReviewBatch(flashcardSetId, sessionId, userId, body) {
++    if (userId == null) {
++      throw AppError.unauthorized("Authentication required to save flashcard progress.");
++    }
++
++    const reviews = body.reviews;
++    if (!Array.isArray(reviews) || reviews.length === 0) {
++      throw AppError.badRequest("reviews must be a non-empty array");
++    }
++    if (reviews.length > 50) {
++      throw AppError.badRequest("Cannot submit more than 50 reviews at once");
++    }
++
++    // Validate all results upfront
++    for (const review of reviews) {
++      if (!VALID_REVIEW_RESULTS.includes(review.result)) {
++        throw AppError.badRequest("Each review result must be correct, incorrect or skip");
++      }
++      if (!review.flashcardItemId) {
++        throw AppError.badRequest("Each review must have a flashcardItemId");
++      }
++    }
++
++    // 1 lightweight query for permission check (no items loaded)
++    const set = await flashcardRepository.findSetBasicById(flashcardSetId);
++    ensureSetReadable(set, userId);
++
++    // 1 query for session validation
++    const session = await flashcardRepository.findStudySessionById(sessionId);
++    if (!session || session.flashcard_set_id !== flashcardSetId) {
++      throw AppError.notFound("Study session not found");
++    }
++    if (session.user_id !== userId) {
++      throw AppError.forbidden("You can only update your own study session");
++    }
++    if (session.status === "completed" || session.status === "abandoned") {
++      throw AppError.badRequest("This study session has already ended");
++    }
++
++    // Batch load all needed items in 1 query
++    const itemIds = [...new Set(reviews.map((r) => r.flashcardItemId))];
++    const items = await prisma.cnt_flashcard_items.findMany({
++      where: {
++        flashcard_item_id: { in: itemIds },
++        flashcard_set_id: flashcardSetId,
++        status: "active",
++      },
++      select: {
++        flashcard_item_id: true,
++        ease_factor: true,
++        interval_days: true,
++      },
++    });
++    const itemMap = new Map(items.map((item) => [item.flashcard_item_id, item]));
++
++    // Batch load latest reviews for all items in 1 query
++    const latestReviews = await prisma.lrn_flashcard_reviews.findMany({
++      where: {
++        user_id: userId,
++        flashcard_item_id: { in: itemIds },
++      },
++      orderBy: [{ flashcard_item_id: "asc" }, { created_at_utc: "desc" }],
++      select: {
++        flashcard_item_id: true,
++        new_ease_factor: true,
++        new_interval_days: true,
++      },
++    });
++    const latestReviewMap = new Map();
++    for (const r of latestReviews) {
++      if (!latestReviewMap.has(r.flashcard_item_id)) {
++        latestReviewMap.set(r.flashcard_item_id, r);
++      }
++    }
++
++    // Batch load existing session reviews in 1 query
++    const existingSessionReviews = await prisma.lrn_flashcard_reviews.findMany({
++      where: {
++        session_id: sessionId,
++        flashcard_item_id: { in: itemIds },
++      },
++      select: {
++        review_id: true,
++        flashcard_item_id: true,
++      },
++    });
++    const sessionReviewMap = new Map(
++      existingSessionReviews.map((r) => [r.flashcard_item_id, r])
++    );
++
++    // Build all review operations
++    const createOperations = [];
++    const updateOperations = [];
++    const skippedItemIds = [];
++
++    for (const review of reviews) {
++      const item = itemMap.get(review.flashcardItemId);
++      if (!item) {
++        skippedItemIds.push(review.flashcardItemId);
++        continue;
++      }
++
++      const latestReview = latestReviewMap.get(review.flashcardItemId);
++      const schedule = buildReviewSchedule(
++        review.result,
++        latestReview?.new_ease_factor ?? item.ease_factor,
++        latestReview?.new_interval_days ?? item.interval_days
++      );
++
++      const reviewPayload = {
++        userRating: schedule.userRating,
++        wasCorrect: schedule.wasCorrect,
++        timeToAnswerSeconds: review.timeToAnswerSeconds ?? 0,
++        previousEaseFactor: schedule.previousEaseFactor,
++        newEaseFactor: schedule.newEaseFactor,
++        previousIntervalDays: schedule.previousIntervalDays,
++        newIntervalDays: schedule.newIntervalDays,
++        nextReviewAtUtc: schedule.nextReviewAtUtc,
++        status: schedule.reviewStatus ?? "completed",
++      };
++
++      const existingReview = sessionReviewMap.get(review.flashcardItemId);
++      if (existingReview) {
++        updateOperations.push({
++          reviewId: existingReview.review_id,
++          ...reviewPayload,
++          updatedBy: userId,
++        });
++      } else {
++        createOperations.push({
++          sessionId,
++          userId,
++          flashcardItemId: review.flashcardItemId,
++          ...reviewPayload,
++          createdBy: userId,
++        });
++      }
++    }
++
++    // Execute all DB writes in a single transaction
++    const transactionOps = [
++      ...createOperations.map((data) =>
++        prisma.lrn_flashcard_reviews.create({
++          data: {
++            session_id: data.sessionId,
++            user_id: data.userId,
++            flashcard_item_id: data.flashcardItemId,
++            user_rating: data.userRating,
++            was_correct: data.wasCorrect,
++            time_to_answer_seconds: data.timeToAnswerSeconds ?? 0,
++            previous_ease_factor: data.previousEaseFactor,
++            new_ease_factor: data.newEaseFactor,
++            previous_interval_days: data.previousIntervalDays ?? 0,
++            new_interval_days: data.newIntervalDays ?? 0,
++            next_review_at_utc: data.nextReviewAtUtc,
++            created_by: data.createdBy,
++            status: data.status ?? "completed",
++          },
++        })
++      ),
++      ...updateOperations.map((data) =>
++        prisma.lrn_flashcard_reviews.update({
++          where: { review_id: data.reviewId },
++          data: {
++            user_rating: data.userRating,
++            was_correct: data.wasCorrect,
++            time_to_answer_seconds: data.timeToAnswerSeconds ?? 0,
++            previous_ease_factor: data.previousEaseFactor,
++            new_ease_factor: data.newEaseFactor,
++            previous_interval_days: data.previousIntervalDays ?? 0,
++            new_interval_days: data.newIntervalDays ?? 0,
++            next_review_at_utc: data.nextReviewAtUtc,
++            updated_by: data.updatedBy,
++            updated_at_utc: new Date(),
++            status: data.status ?? "completed",
++          },
++        })
++      ),
++    ];
++
++    if (transactionOps.length > 0) {
++      await prisma.$transaction(transactionOps);
++    }
++
++    // 1 refresh at the end instead of N
++    const updatedSession = await flashcardRepository.refreshStudySessionStats(
++      sessionId,
++      session.total_cards,
++      userId
++    );
++
++    return {
++      processedCount: createOperations.length + updateOperations.length,
++      skippedCount: skippedItemIds.length,
++      session: flashcardDto.sessionToResponse(updatedSession),
++      deckProgress: await getDeckProgress(userId, flashcardSetId),
++    };
++  },
++
+   async completeStudySession(flashcardSetId, sessionId, userId, body) {
+     if (userId == null) {
+       throw AppError.unauthorized("Authentication required to complete a study session.");
+diff --git a/src/validators/flashcard.validator.js b/src/validators/flashcard.validator.js
+index c16f3b4..c8e7636 100644
+--- a/src/validators/flashcard.validator.js
++++ b/src/validators/flashcard.validator.js
+@@ -95,6 +95,20 @@ const submitStudyReviewRules = [
+     .withMessage("timeToAnswerSeconds must be a non-negative integer"),
+ ];
+ 
++const submitStudyReviewBatchRules = [
++  param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
++  param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),
++  body("reviews")
++    .isArray({ min: 1, max: 50 })
++    .withMessage("reviews must be an array with 1-50 items"),
++  body("reviews.*.flashcardItemId")
++    .isUUID()
++    .withMessage("Each review flashcardItemId must be a valid UUID"),
++  body("reviews.*.result")
++    .isIn(["correct", "incorrect", "skip"])
++    .withMessage("Each review result must be correct, incorrect or skip"),
++];
++
+ const completeStudySessionRules = [
+   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+   param("sessionId").isUUID().withMessage("Study session ID must be a valid UUID"),
+@@ -121,6 +135,7 @@ const createItemRules = [
+   body("intervalDays").optional().isInt({ min: 0 }).withMessage("intervalDays must be non-negative"),
+ ];
+ 
++
+ const updateItemRules = [
+   param("setId").isUUID().withMessage("Flashcard set ID must be a valid UUID"),
+   param("itemId").isUUID().withMessage("Flashcard item ID must be a valid UUID"),
+@@ -144,6 +159,7 @@ module.exports = {
+   getItemsRules,
+   startStudySessionRules,
+   submitStudyReviewRules,
++  submitStudyReviewBatchRules,
+   completeStudySessionRules,
+   itemIdParamRules,
+   createItemRules,

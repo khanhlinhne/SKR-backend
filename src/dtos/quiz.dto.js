@@ -11,11 +11,14 @@ function toPracticeItem(practice) {
     randomizeQuestions: practice.randomize_questions,
     randomizeOptions: practice.randomize_options,
     showCorrectAnswers: practice.show_correct_answers,
-    attemptsCount: practice.attempts_count ?? 0,
-    bestScore: practice.best_score,
-    averageScore: practice.average_score,
+    attemptsCount: practice.attempts_count != null ? Number(practice.attempts_count) : 0,
+    bestScore: practice.best_score != null ? Number(practice.best_score) : null,
+    averageScore: practice.average_score != null ? Number(practice.average_score) : null,
     lastAttemptAtUtc: practice.last_attempt_at_utc,
     status: practice.status,
+    ...(practice.questionSourceMode ? { questionSourceMode: practice.questionSourceMode } : {}),
+    ...(practice.customQuestionCount != null ? { customQuestionCount: Number(practice.customQuestionCount) } : {}),
+    ...(practice.aiGenerationId ? { aiGenerationId: practice.aiGenerationId } : {}),
   };
 }
 
@@ -65,6 +68,9 @@ function toAttemptDetail(attempt, questions, answersByQuestionId, { showCorrectA
 }
 
 function toQuizResult(attempt, { totalPointsPossible, scoreAchieved, percentageScore, isPassed } = {}) {
+  const _scoreAchieved = scoreAchieved ?? attempt.score_achieved;
+  const _percentageScore = percentageScore ?? attempt.percentage_score;
+  const _passingScore = attempt.passing_score;
   return {
     attemptId: attempt.attempt_id,
     practiceTestId: attempt.quiz_type,
@@ -72,9 +78,9 @@ function toQuizResult(attempt, { totalPointsPossible, scoreAchieved, percentageS
     totalQuestions: attempt.total_questions,
     questionsAnswered: attempt.questions_answered,
     correctAnswers: attempt.correct_answers,
-    scoreAchieved: scoreAchieved ?? attempt.score_achieved,
-    percentageScore: percentageScore ?? attempt.percentage_score,
-    passingScore: attempt.passing_score,
+    scoreAchieved: _scoreAchieved != null ? Number(_scoreAchieved) : null,
+    percentageScore: _percentageScore != null ? Number(_percentageScore) : null,
+    passingScore: _passingScore != null ? Number(_passingScore) : null,
     isPassed: isPassed ?? attempt.is_passed,
     status: attempt.status,
     startedAtUtc: attempt.started_at_utc,
@@ -84,8 +90,25 @@ function toQuizResult(attempt, { totalPointsPossible, scoreAchieved, percentageS
   };
 }
 
+function toOptionSummary(option) {
+  return {
+    optionId: option.option_id,
+    optionText: option.option_text,
+    optionOrder: option.option_order ?? null,
+    optionExplanation: option.option_explanation ?? null,
+  };
+}
+
+function toReviewOption(option, { selectedOptionIdSet, showCorrectAnswers }) {
+  return {
+    ...toOptionSummary(option),
+    isUserSelected: selectedOptionIdSet.has(option.option_id),
+    ...(showCorrectAnswers ? { isCorrect: Boolean(option.is_correct) } : {}),
+  };
+}
+
 function toQuizReview(attempt, practice, questions, answersByQuestionId, correctOptionsByQuestionId) {
-  const showCorrect = Boolean(practice?.show_correct_answers);
+  const showCorrect = practice?.show_correct_answers !== false;
   return {
     attemptId: attempt.attempt_id,
     practiceTestId: attempt.quiz_type,
@@ -94,21 +117,39 @@ function toQuizReview(attempt, practice, questions, answersByQuestionId, correct
     showCorrectAnswers: showCorrect,
     answers: questions.map((q) => {
       const ans = answersByQuestionId.get(q.question_id);
-      const correctOpts = correctOptionsByQuestionId.get(q.question_id) || [];
+      const questionOptions = Array.isArray(q.cnt_question_options) ? q.cnt_question_options : [];
+      const selectedOptionIds = Array.isArray(ans?.selected_option_ids) ? ans.selected_option_ids : [];
+      const selectedOptionIdSet = new Set(selectedOptionIds);
+      const options = questionOptions.map((o) => toReviewOption(o, { selectedOptionIdSet, showCorrectAnswers: showCorrect }));
+      const userSelectedOptions = options
+        .filter((o) => o.isUserSelected)
+        .map(({ optionId, optionText, optionOrder, optionExplanation }) => ({
+          optionId,
+          optionText,
+          optionOrder,
+          optionExplanation,
+        }));
+      const fallbackCorrectOptions = questionOptions.filter((o) => Boolean(o.is_correct));
+      const correctOpts = correctOptionsByQuestionId.get(q.question_id) || fallbackCorrectOptions;
+      const correctOptions = showCorrect ? correctOpts.map(toOptionSummary) : [];
+
       return {
         questionId: q.question_id,
         questionType: q.question_type,
         questionText: q.question_text,
         questionExplanation: q.question_explanation,
-        userSelectedOptionIds: ans?.selected_option_ids ?? [],
+        options,
+        userSelectedOptionIds: selectedOptionIds,
+        userSelectedOptions,
         userAnswerText: ans?.answer_text ?? null,
         isCorrect: ans?.is_correct ?? null,
-        pointsEarned: ans?.points_earned ?? null,
-        pointsPossible: ans?.points_possible ?? null,
+        pointsEarned: ans?.points_earned != null ? Number(ans.points_earned) : null,
+        pointsPossible: ans?.points_possible != null ? Number(ans.points_possible) : null,
         ...(showCorrect
           ? {
-              correctOptionIds: correctOpts.map((o) => o.option_id),
-              correctOptionTexts: correctOpts.map((o) => o.option_text),
+              correctOptionIds: correctOptions.map((o) => o.optionId),
+              correctOptionTexts: correctOptions.map((o) => o.optionText),
+              correctOptions,
             }
           : {}),
       };

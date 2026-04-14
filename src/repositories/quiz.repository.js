@@ -1,5 +1,38 @@
 const prisma = require("../config/prisma");
 
+function buildPracticeScopedQuestionCreateInput({ practiceTestId, userId, question, sourceType, sourceGenerationId }) {
+  return {
+    question_type: question.questionType,
+    question_text: question.questionText,
+    question_explanation: question.questionExplanation ?? null,
+    difficulty_level: question.difficultyLevel ?? "medium",
+    points: question.points ?? 1,
+    time_limit_seconds: question.timeLimitSeconds ?? null,
+    creator_id: userId,
+    lesson_id: null,
+    course_id: null,
+    visibility: "private",
+    tags: {
+      practiceTestId,
+      questionSourceMode: sourceType,
+      ...(sourceGenerationId ? { sourceGenerationId } : {}),
+    },
+    status: "active",
+    created_by: userId,
+    cnt_question_options: question.options?.length
+      ? {
+          create: question.options.map((opt, idx) => ({
+            option_text: opt.optionText,
+            option_order: opt.optionOrder ?? idx,
+            is_correct: opt.isCorrect ?? false,
+            option_explanation: opt.optionExplanation ?? null,
+            created_by: userId,
+          })),
+        }
+      : undefined,
+  };
+}
+
 const quizRepository = {
   async findPracticeTestsByUser(userId, { where = {}, orderBy = { created_at_utc: "desc" }, skip = 0, take = 10 } = {}) {
     const baseWhere = {
@@ -48,6 +81,64 @@ const quizRepository = {
         created_by: data.createdBy,
       },
     });
+  },
+
+  async createPracticeTestWithScopedQuestions({ practice, scopedQuestions }) {
+    return prisma.$transaction(async (tx) => {
+      const created = await tx.lrn_practice_tests.create({
+        data: {
+          user_id: practice.userId,
+          test_title: practice.testTitle,
+          test_description: practice.testDescription ?? null,
+          course_ids: practice.courseIds ?? null,
+          difficulty_levels: practice.difficultyLevels ?? null,
+          question_types: practice.questionTypes ?? null,
+          total_questions: practice.totalQuestions,
+          time_limit_minutes: practice.timeLimitMinutes ?? null,
+          randomize_questions: practice.randomizeQuestions ?? true,
+          randomize_options: practice.randomizeOptions ?? true,
+          show_correct_answers: practice.showCorrectAnswers ?? true,
+          attempts_count: practice.attemptsCount ?? 0,
+          best_score: practice.bestScore ?? null,
+          average_score: practice.averageScore ?? null,
+          last_attempt_at_utc: practice.lastAttemptAtUtc ?? null,
+          status: practice.status ?? "active",
+          created_by: practice.createdBy,
+        },
+      });
+
+      if (scopedQuestions?.questions?.length) {
+        for (const question of scopedQuestions.questions) {
+          await tx.cnt_questions.create({
+            data: buildPracticeScopedQuestionCreateInput({
+              practiceTestId: created.practice_test_id,
+              userId: practice.userId,
+              question,
+              sourceType: scopedQuestions.sourceType ?? "manual",
+              sourceGenerationId: scopedQuestions.sourceGenerationId ?? null,
+            }),
+          });
+        }
+      }
+
+      return created;
+    });
+  },
+
+  async createPracticeScopedQuestions({ practiceTestId, userId, questions, sourceType = "manual", sourceGenerationId = null }) {
+    const operations = questions.map((q) =>
+      prisma.cnt_questions.create({
+        data: buildPracticeScopedQuestionCreateInput({
+          practiceTestId,
+          userId,
+          question: q,
+          sourceType,
+          sourceGenerationId,
+        }),
+      })
+    );
+
+    return prisma.$transaction(operations);
   },
 
   async updatePracticeTest(practiceTestId, data) {
@@ -246,13 +337,45 @@ const quizRepository = {
   async listCorrectOptionsByQuestionIds(questionIds) {
     return prisma.cnt_question_options.findMany({
       where: { question_id: { in: questionIds }, is_correct: true, status: { not: "deleted" } },
-      select: { question_id: true, option_id: true, option_text: true },
+      select: {
+        question_id: true,
+        option_id: true,
+        option_text: true,
+        option_order: true,
+        option_explanation: true,
+      },
+    });
+  },
+
+  async findPracticeScopedQuestions(practiceTestId) {
+    return prisma.cnt_questions.findMany({
+      where: {
+        status: { not: "deleted" },
+        tags: {
+          path: ["practiceTestId"],
+          equals: practiceTestId,
+        },
+      },
+      orderBy: { created_at_utc: "desc" },
+      include: {
+        cnt_question_options: {
+          where: { status: { not: "deleted" } },
+          orderBy: { option_order: "asc" },
+          select: {
+            option_id: true,
+            option_text: true,
+            option_order: true,
+            is_correct: true,
+            option_explanation: true,
+          },
+        },
+      },
     });
   },
 
   async selectCandidateQuestionsForPractice(practice) {
     // NOTE: we randomize in application code (shuffle + slice) to avoid SQL-specific random.
-    const candidateLimit = Math.min(500, Math.max((practice.totalQuestions ?? 0) * 10, 50));
+    const candidateLimit = Math.min(200, Math.max((practice.totalQuestions ?? 0) * 8, 40));
     const totalQuestions = practice.totalQuestions;
 
     const where = {

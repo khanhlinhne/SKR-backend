@@ -1,6 +1,10 @@
 const prisma = require("../config/prisma");
 
 const flashcardRepository = {
+  /**
+   * Full load: set + all active items + creator info.
+   * Use only when you actually need the items (e.g. getItems, getSetById detail).
+   */
   async findSetById(flashcardSetId) {
     return prisma.cnt_flashcards.findUnique({
       where: { flashcard_set_id: flashcardSetId },
@@ -21,6 +25,50 @@ const flashcardRepository = {
     });
   },
 
+  /**
+   * Lightweight load: set metadata only (no items, no user join).
+   * Use for permission checks, submit reviews, etc.
+   */
+  async findSetBasicById(flashcardSetId) {
+    return prisma.cnt_flashcards.findUnique({
+      where: { flashcard_set_id: flashcardSetId },
+      select: {
+        flashcard_set_id: true,
+        creator_id: true,
+        course_id: true,
+        visibility: true,
+        status: true,
+        total_cards: true,
+      },
+    });
+  },
+
+  /**
+   * Batch insert multiple reviews in a single transaction.
+   */
+  async createManyStudyReviews(reviewsData) {
+    return prisma.$transaction(
+      reviewsData.map((data) =>
+        prisma.lrn_flashcard_reviews.create({
+          data: {
+            session_id: data.sessionId,
+            user_id: data.userId,
+            flashcard_item_id: data.flashcardItemId,
+            user_rating: data.userRating,
+            was_correct: data.wasCorrect,
+            time_to_answer_seconds: data.timeToAnswerSeconds ?? 0,
+            previous_ease_factor: data.previousEaseFactor,
+            new_ease_factor: data.newEaseFactor,
+            previous_interval_days: data.previousIntervalDays ?? 0,
+            new_interval_days: data.newIntervalDays ?? 0,
+            next_review_at_utc: data.nextReviewAtUtc,
+            created_by: data.createdBy,
+            status: data.status ?? "completed",
+          },
+        })
+      )
+    );
+  },
   async findPublicSets({ courseId, search, orderBy, skip, take }) {
     const where = {
       visibility: "public",
@@ -154,7 +202,6 @@ const flashcardRepository = {
         return new Map();
       }
 
-      const latestReviewByItem = new Map();
       const reviews = await prisma.lrn_flashcard_reviews.findMany({
         where: {
           user_id: userId,
@@ -164,6 +211,7 @@ const flashcardRepository = {
           { flashcard_item_id: "asc" },
           { created_at_utc: "desc" },
         ],
+        distinct: ["flashcard_item_id"],
         select: {
           flashcard_item_id: true,
           was_correct: true,
@@ -171,11 +219,7 @@ const flashcardRepository = {
         },
       });
 
-      for (const review of reviews) {
-        if (!latestReviewByItem.has(review.flashcard_item_id)) {
-          latestReviewByItem.set(review.flashcard_item_id, review);
-        }
-      }
+      const latestReviewByItem = new Map(reviews.map((review) => [review.flashcard_item_id, review]));
 
       const now = new Date();
       const progressMap = new Map();
@@ -260,7 +304,21 @@ const flashcardRepository = {
   async findItemById(flashcardItemId) {
     return prisma.cnt_flashcard_items.findUnique({
       where: { flashcard_item_id: flashcardItemId },
-      include: { cnt_flashcards: true },
+      select: {
+        flashcard_item_id: true,
+        flashcard_set_id: true,
+        status: true,
+        front_text: true,
+        back_text: true,
+        card_order: true,
+        hint_text: true,
+        ease_factor: true,
+        interval_days: true,
+        front_image_url: true,
+        back_image_url: true,
+        created_at_utc: true,
+        updated_at_utc: true,
+      },
     });
   },
 
@@ -346,17 +404,16 @@ const flashcardRepository = {
   },
 
   async refreshStudySessionStats(sessionId, totalCards, updatedBy) {
-    const [cardsReviewed, cardsMastered] = await prisma.$transaction([
-      prisma.lrn_flashcard_reviews.count({
-        where: { session_id: sessionId },
-      }),
-      prisma.lrn_flashcard_reviews.count({
-        where: {
-          session_id: sessionId,
-          was_correct: true,
-        },
-      }),
-    ]);
+    const agg = await prisma.$queryRaw`
+      SELECT
+        COUNT(*)::int AS "cardsReviewed",
+        COUNT(*) FILTER (WHERE was_correct = true)::int AS "cardsMastered"
+      FROM lrn_flashcard_reviews
+      WHERE session_id = ${sessionId}::uuid
+    `;
+    const row = agg[0] || { cardsReviewed: 0, cardsMastered: 0 };
+    const cardsReviewed = row.cardsReviewed;
+    const cardsMastered = row.cardsMastered;
 
     const cardsLearning = Math.max(cardsReviewed - cardsMastered, 0);
     const cardsNew = Math.max((totalCards ?? 0) - cardsReviewed, 0);
@@ -450,16 +507,15 @@ const flashcardRepository = {
   },
 
   async updateSetTotalCards(flashcardSetId, delta) {
-    const set = await prisma.cnt_flashcards.findUnique({
-      where: { flashcard_set_id: flashcardSetId },
-      select: { total_cards: true },
-    });
-    if (!set) return null;
-    const newTotal = Math.max(0, (set.total_cards ?? 0) + delta);
-    return prisma.cnt_flashcards.update({
-      where: { flashcard_set_id: flashcardSetId },
-      data: { total_cards: newTotal },
-    });
+    const d = Number(delta);
+    if (!Number.isFinite(d) || d === 0) return null;
+    const rows = await prisma.$queryRaw`
+      UPDATE cnt_flashcards
+      SET total_cards = GREATEST(0, COALESCE(total_cards, 0) + ${d})
+      WHERE flashcard_set_id = ${flashcardSetId}::uuid
+      RETURNING *
+    `;
+    return rows[0] ?? null;
   },
 };
 

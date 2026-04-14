@@ -99,7 +99,56 @@ function toChapterItem(chapter) {
   };
 }
 
+function toSafeCount(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  return parsed;
+}
+
+function resolveLessonContentCounts(lesson = {}) {
+  const relationCounts = lesson._count || {};
+
+  return {
+    totalVideos: toSafeCount(lesson.total_videos ?? lesson.totalVideos ?? relationCounts.cnt_videos),
+    totalDocuments: toSafeCount(lesson.total_documents ?? lesson.totalDocuments ?? relationCounts.cnt_documents),
+    totalQuestions: toSafeCount(lesson.total_questions ?? lesson.totalQuestions ?? relationCounts.cnt_questions),
+    totalFlashcardSets: toSafeCount(
+      lesson.total_flashcard_sets ?? lesson.totalFlashcardSets ?? relationCounts.cnt_flashcards
+    ),
+  };
+}
+
+const VALID_LESSON_TYPES = new Set(["video", "document", "quiz", "flashcard"]);
+
+function resolveLessonType(lesson, counts = resolveLessonContentCounts(lesson)) {
+  const explicitType =
+    typeof lesson.lesson_type === "string" ? lesson.lesson_type.trim().toLowerCase() : "";
+
+  if (VALID_LESSON_TYPES.has(explicitType)) {
+    return explicitType;
+  }
+
+  if (counts.totalVideos > 0) {
+    return "video";
+  }
+  if (counts.totalDocuments > 0) {
+    return "document";
+  }
+  if (counts.totalQuestions > 0) {
+    return "quiz";
+  }
+  if (counts.totalFlashcardSets > 0) {
+    return "flashcard";
+  }
+
+  return "video";
+}
+
 function toLessonItem(lesson) {
+  const counts = resolveLessonContentCounts(lesson);
+
   return {
     lessonId: lesson.lesson_id,
     lessonCode: lesson.lesson_code,
@@ -109,10 +158,24 @@ function toLessonItem(lesson) {
     displayOrder: lesson.display_order,
     learningObjectives: lesson.learning_objectives,
     estimatedDurationMinutes: lesson.estimated_duration_minutes,
+    lessonType: resolveLessonType(lesson, counts),
+    totalVideos: counts.totalVideos,
+    totalDocuments: counts.totalDocuments,
+    totalQuestions: counts.totalQuestions,
+    totalFlashcardSets: counts.totalFlashcardSets,
+    hasFlashcardSet: counts.totalFlashcardSets > 0,
   };
 }
 
 function toLessonDetail(lesson) {
+  const counts = resolveLessonContentCounts({
+    ...lesson,
+    totalVideos: lesson.cnt_videos?.length ?? 0,
+    totalDocuments: lesson.cnt_documents?.length ?? 0,
+    totalQuestions: lesson.cnt_questions?.length ?? 0,
+    totalFlashcardSets: lesson.cnt_flashcards?.length ?? 0,
+  });
+
   return {
     lessonId: lesson.lesson_id,
     lessonCode: lesson.lesson_code,
@@ -122,9 +185,48 @@ function toLessonDetail(lesson) {
     displayOrder: lesson.display_order,
     learningObjectives: lesson.learning_objectives,
     estimatedDurationMinutes: lesson.estimated_duration_minutes,
+    lessonType: resolveLessonType(lesson, counts),
+    totalVideos: counts.totalVideos,
+    totalDocuments: counts.totalDocuments,
+    totalQuestions: counts.totalQuestions,
+    totalFlashcardSets: counts.totalFlashcardSets,
+    hasFlashcardSet: counts.totalFlashcardSets > 0,
+    flashcardSets: (lesson.cnt_flashcards || []).map(toFlashcardSetItem),
     videos: (lesson.cnt_videos || []).map(toVideoItem),
     documents: (lesson.cnt_documents || []).map(toDocumentItem),
     questions: (lesson.cnt_questions || []).map(toQuestionItem),
+  };
+}
+
+function toFlashcardSetItem(set) {
+  return {
+    flashcardSetId: set.flashcard_set_id,
+    setTitle: set.set_title,
+    setDescription: set.set_description,
+    setCoverImageUrl: set.set_cover_image_url,
+    totalCards: set.total_cards ?? 0,
+    visibility: set.visibility,
+    status: set.status,
+    createdAt: set.created_at_utc,
+    updatedAt: set.updated_at_utc,
+    items: (set.cnt_flashcard_items || []).map(toFlashcardItem),
+  };
+}
+
+function toFlashcardItem(item) {
+  return {
+    flashcardItemId: item.flashcard_item_id,
+    frontText: item.front_text,
+    backText: item.back_text,
+    frontImageUrl: item.front_image_url,
+    backImageUrl: item.back_image_url,
+    cardOrder: item.card_order,
+    hintText: item.hint_text,
+    easeFactor: item.ease_factor,
+    intervalDays: item.interval_days,
+    status: item.status,
+    createdAt: item.created_at_utc,
+    updatedAt: item.updated_at_utc,
   };
 }
 
