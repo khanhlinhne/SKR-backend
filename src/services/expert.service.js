@@ -1,6 +1,7 @@
 const AppError = require("../utils/AppError");
 const prisma = require("../config/prisma");
 const expertRepository = require("../repositories/expert.repository");
+const dashboardRepository = require("../repositories/dashboard.repository");
 const expertDto = require("../dtos/expert.dto");
 
 async function userIsAdmin(userId) {
@@ -41,7 +42,186 @@ async function ensureCreatorRole(userId, staffUserId) {
   });
 }
 
+function num(d) {
+  if (d === null || d === undefined) return 0;
+  return typeof d === "object" && typeof d.toNumber === "function" ? d.toNumber() : Number(d);
+}
+
+function round1(value) {
+  return Math.round((Number(value) || 0) * 10) / 10;
+}
+
+function pctChange(current, previous) {
+  const c = Number(current);
+  const p = Number(previous);
+  if (!Number.isFinite(c) || !Number.isFinite(p)) return null;
+  if (p === 0) return c > 0 ? 100 : 0;
+  return round1(((c - p) / p) * 100);
+}
+
+function getComparableRanges(period) {
+  const now = new Date();
+  let currentStart;
+  if (period === "week") {
+    const d = new Date(now);
+    const day = (d.getUTCDay() + 6) % 7;
+    currentStart = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day));
+  } else if (period === "year") {
+    currentStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  } else {
+    currentStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  }
+
+  const msCurrent = now.getTime() - currentStart.getTime();
+  const previousEnd = new Date(currentStart.getTime() - 1);
+  const previousStart = new Date(currentStart.getTime() - msCurrent);
+
+  return {
+    currentStart,
+    currentEnd: now,
+    previousStart,
+    previousEnd,
+  };
+}
+
+function buildLast12MonthBuckets() {
+  const now = new Date();
+  const buckets = [];
+  for (let i = 11; i >= 0; i -= 1) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    buckets.push({
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      total: 0,
+    });
+  }
+  return buckets;
+}
+
+function mergeMonthlyStudentLogins(buckets, rows) {
+  const key = (year, month) => `${year}-${month}`;
+  const map = new Map();
+  for (const b of buckets) map.set(key(b.year, b.month), b);
+
+  for (const row of rows || []) {
+    const bucket = map.get(key(row.year, row.month));
+    if (bucket) bucket.total = Number(row.total) || 0;
+  }
+
+  return buckets.map((bucket, index) => ({
+    year: bucket.year,
+    month: bucket.month,
+    label: `T${index + 1}`,
+    total: bucket.total,
+  }));
+}
+
 const expertService = {
+  async getMyDashboard(userId, period = "month") {
+    if (!userId) throw AppError.unauthorized("Authentication required.");
+
+    const currentPeriod = period === "week" || period === "year" ? period : "month";
+    const { currentStart, currentEnd, previousStart, previousEnd } = getComparableRanges(currentPeriod);
+    const chartStart = new Date(
+      Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 11, 1)
+    );
+
+    const [
+      totalCourses,
+      totalStudents,
+      revenueCurrent,
+      revenuePrevious,
+      ratingSummary,
+      monthlyStudentLoginsRaw,
+      topCoursesRaw,
+    ] = await Promise.all([
+      dashboardRepository.countCoursesByCreator(userId, { status: "published" }),
+      dashboardRepository.countActiveStudentsByCreator(userId),
+      dashboardRepository.sumPurchaseRevenueByCreator(userId, currentStart, currentEnd),
+      dashboardRepository.sumPurchaseRevenueByCreator(userId, previousStart, previousEnd),
+      dashboardRepository.getCourseRatingSummaryByCreator(userId),
+      dashboardRepository.getMonthlyStudentLoginsByCreator(userId, chartStart, currentEnd),
+      dashboardRepository.getTopCoursesByCreator(userId, 5),
+    ]);
+
+    const revenueChange = pctChange(num(revenueCurrent), num(revenuePrevious));
+    const monthlyStudentLogins = mergeMonthlyStudentLogins(
+      buildLast12MonthBuckets(),
+      monthlyStudentLoginsRaw
+    );
+
+    const topCourses = topCoursesRaw.map((row) => ({
+      rank: row.rank,
+      courseId: row.courseId,
+      courseName: row.course?.course_name || null,
+      courseCode: row.course?.course_code || null,
+      studentCount: row.studentCount || 0,
+      revenue: Math.round(num(row.revenue)),
+      rating: row.course?.rating_average != null ? round1(num(row.course.rating_average)) : null,
+    }));
+
+    return {
+      period: currentPeriod,
+      periodBounds: {
+        currentStartUtc: currentStart,
+        currentEndUtc: currentEnd,
+        previousStartUtc: previousStart,
+        previousEndUtc: previousEnd,
+      },
+      summary: {
+        courses: {
+          total: totalCourses,
+        },
+        students: {
+          total: totalStudents,
+        },
+        revenue: {
+          totalInPeriod: Math.round(num(revenueCurrent)),
+          currencyCode: "VND",
+          changePercent: revenueChange,
+        },
+        rating: {
+          average: ratingSummary.average != null ? round1(num(ratingSummary.average)) : null,
+          ratedCourseCount: ratingSummary.ratedCourseCount,
+        },
+      },
+      studentLoginsByMonth: monthlyStudentLogins,
+      topCourses,
+      ui: {
+        page: {
+          sectionTitle: "Tổng quan",
+          sectionSubtitle: "Theo dõi khóa học và người học của bạn",
+        },
+        summaryCards: [
+          { key: "courses", title: "Khóa học", value: totalCourses },
+          { key: "students", title: "Học viên", value: totalStudents },
+          {
+            key: "revenue",
+            title: "Doanh thu",
+            value: Math.round(num(revenueCurrent)),
+            currencyCode: "VND",
+            changePercent: revenueChange,
+          },
+          {
+            key: "rating",
+            title: "Đánh giá",
+            value: ratingSummary.average != null ? round1(num(ratingSummary.average)) : null,
+          },
+        ],
+        studentLoginChart: {
+          title: "Biểu đồ Học viên đăng nhập",
+          subtitle: "Số học viên đăng nhập theo tháng",
+          legendLabel: "Học viên đăng nhập",
+          points: monthlyStudentLogins,
+        },
+        myCourses: {
+          title: "Khóa học của tôi",
+          items: topCourses,
+        },
+      },
+    };
+  },
+
   async listExperts(query, { isAdmin = false } = {}) {
     const page = Math.max(parseInt(query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(query.limit, 10) || 10, 1), 100);

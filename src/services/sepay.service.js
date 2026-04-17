@@ -15,6 +15,26 @@ function pickFirst(...values) {
   return undefined;
 }
 
+function resolveCreateOrderPath() {
+  const rawPath = String(config.sepay.createOrderPath || "").trim();
+  if (!rawPath) {
+    return "";
+  }
+
+  const accountId = String(config.sepay.bankAccountId || "").trim();
+  if (!rawPath.includes("{ba_id}")) {
+    return rawPath;
+  }
+
+  if (!accountId) {
+    throw AppError.badRequest(
+      "SEPAY_CREATE_ORDER_PATH contains {ba_id}. Please set SEPAY_BANK_ACCOUNT_ID in .env"
+    );
+  }
+
+  return rawPath.replaceAll("{ba_id}", encodeURIComponent(accountId));
+}
+
 const sepayService = {
   async createPaymentRequest({ orderCode, amount, description, metadata = {} }) {
     if (!config.sepay.enabled) {
@@ -45,7 +65,8 @@ const sepayService = {
       };
     }
 
-    const url = `${config.sepay.apiBaseUrl}${config.sepay.createOrderPath}`;
+    const createOrderPath = resolveCreateOrderPath();
+    const url = `${config.sepay.apiBaseUrl}${createOrderPath}`;
     const headers = {
       "Content-Type": "application/json",
       ...(config.sepay.apiKey ? { Authorization: `Bearer ${config.sepay.apiKey}` } : {}),
