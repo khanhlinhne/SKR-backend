@@ -56,6 +56,19 @@ const config = {
      */
     publicGenerationOwnerUserId: process.env.AI_PUBLIC_GENERATION_OWNER_USER_ID?.trim() || null,
   },
+
+  sepay: {
+    enabled: String(process.env.SEPAY_ENABLED || "false").toLowerCase() === "true",
+    apiKey: process.env.SEPAY_API_KEY || "",
+    apiBaseUrl: process.env.SEPAY_API_BASE_URL || "",
+    createOrderPath: process.env.SEPAY_CREATE_ORDER_PATH || "/v1/payment-requests",
+    webhookSecret: process.env.SEPAY_WEBHOOK_SECRET || "",
+    timeoutMs: parseInt(process.env.SEPAY_TIMEOUT_MS, 10) || 15000,
+
+    bankCode: process.env.SEPAY_BANK_CODE || "",
+    bankAccountNumber: process.env.SEPAY_BANK_ACCOUNT_NUMBER || "",
+    bankAccountName: process.env.SEPAY_BANK_ACCOUNT_NAME || "",
+  },
 };
 
 module.exports = config;

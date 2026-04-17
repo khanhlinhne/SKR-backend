@@ -11,8 +11,10 @@ const aiGeminiRoutes = require("./ai-gemini.routes");
 const registrationAdminRoutes = require("./registration-admin.routes");
 const dashboardAdminRoutes = require("./dashboard-admin.routes");
 const enrollmentRoutes = require("./enrollment.routes");
+const expertRoutes = require("./expert.routes");
 const quizRoutes = require("./quiz.routes");
 const quizAttemptRoutes = require("./quiz-attempts.routes");
+const paymentRoutes = require("./payment.routes");
 
 const router = Router();
 
@@ -26,8 +28,10 @@ router.use("/settings", settingRoutes);
 router.use("/packages", packageRoutes);
 router.use("/ai-gemini", aiGeminiRoutes);
 router.use("/enrollments", enrollmentRoutes);
+router.use("/experts", expertRoutes);
 router.use("/quiz-practices", quizRoutes);
 router.use("/quiz-attempts", quizAttemptRoutes);
+router.use("/payments", paymentRoutes);
 router.use("/admin/registrations", registrationAdminRoutes);
 router.use("/admin/dashboard", dashboardAdminRoutes);
 
