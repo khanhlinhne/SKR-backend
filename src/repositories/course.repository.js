@@ -614,6 +614,64 @@ const courseRepository = {
     });
   },
 
+  async updateQuestion(questionId, data) {
+    const now = new Date();
+
+    return prisma.$transaction(async (tx) => {
+      await tx.cnt_questions.update({
+        where: { question_id: questionId },
+        data: {
+          ...(data.questionType !== undefined && { question_type: data.questionType }),
+          ...(data.questionText !== undefined && { question_text: data.questionText }),
+          ...(data.questionExplanation !== undefined && {
+            question_explanation: data.questionExplanation,
+          }),
+          ...(data.difficultyLevel !== undefined && { difficulty_level: data.difficultyLevel }),
+          updated_by: data.updatedBy,
+          updated_at_utc: now,
+        },
+      });
+
+      if (data.options !== undefined) {
+        await tx.cnt_question_options.updateMany({
+          where: {
+            question_id: questionId,
+            status: { not: "deleted" },
+          },
+          data: {
+            status: "deleted",
+            updated_by: data.updatedBy,
+            updated_at_utc: now,
+          },
+        });
+
+        if (data.options.length) {
+          await tx.cnt_question_options.createMany({
+            data: data.options.map((opt, idx) => ({
+              question_id: questionId,
+              option_text: opt.optionText,
+              option_order: opt.optionOrder ?? idx,
+              is_correct: opt.isCorrect ?? false,
+              option_explanation: opt.optionExplanation ?? null,
+              created_by: data.updatedBy,
+              status: "active",
+            })),
+          });
+        }
+      }
+
+      return tx.cnt_questions.findUnique({
+        where: { question_id: questionId },
+        include: {
+          cnt_question_options: {
+            where: { status: { not: "deleted" } },
+            orderBy: { option_order: "asc" },
+          },
+        },
+      });
+    });
+  },
+
   async deleteQuestion(questionId, userId) {
     return prisma.cnt_questions.update({
       where: { question_id: questionId },

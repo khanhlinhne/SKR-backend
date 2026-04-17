@@ -242,6 +242,22 @@ const courseController = {
     }
   },
 
+  async updateQuestion(req, res, next) {
+    try {
+      const data = await courseService.updateQuestion(
+        req.params.courseId,
+        req.params.chapterId,
+        req.params.lessonId,
+        req.params.questionId,
+        req.user?.userId,
+        req.body
+      );
+      return success(res, { message: "Question updated successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async deleteQuestion(req, res, next) {
     try {
       const data = await courseService.deleteQuestion(

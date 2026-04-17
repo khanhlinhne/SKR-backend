@@ -20,6 +20,7 @@ const VALID_CONTENT_VISIBILITY = new Set([
   "premium_only",
   "unlisted",
 ]);
+const OPTION_BASED_QUESTION_TYPES = new Set(["multiple_choice", "true_false"]);
 
 function normalizeOptionalText(value) {
   if (typeof value !== "string") return value ?? undefined;
@@ -61,6 +62,60 @@ function getFileNameFromUrl(fileUrl) {
 function getFileTypeFromName(fileName) {
   const extension = path.extname(fileName || "").slice(1).toLowerCase();
   return extension || undefined;
+}
+
+function normalizeRequiredPatchText(value, fieldName) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return value;
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw AppError.badRequest(`${fieldName} cannot be empty`);
+  }
+
+  return trimmed;
+}
+
+function normalizeOptionalPatchText(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string") return value;
+
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function normalizeQuestionOptionsForUpdate(options, questionType) {
+  if (options === undefined) return undefined;
+  if (!Array.isArray(options)) return options;
+
+  const normalized = options.map((option, index) => {
+    const optionText = normalizeRequiredPatchText(option?.optionText, `options[${index}].optionText`);
+
+    return {
+      optionText,
+      optionOrder:
+        option?.optionOrder !== undefined
+          ? normalizeOptionalInteger(option.optionOrder)
+          : index,
+      isCorrect: option?.isCorrect === true,
+      optionExplanation: normalizeOptionalPatchText(option?.optionExplanation),
+    };
+  });
+
+  if (OPTION_BASED_QUESTION_TYPES.has(questionType)) {
+    if (normalized.length < 2) {
+      throw AppError.badRequest("Option-based questions must contain at least 2 options");
+    }
+
+    if (!normalized.some((option) => option.isCorrect)) {
+      throw AppError.badRequest("Option-based questions must contain at least 1 correct option");
+    }
+  } else if (!normalized.some((option) => option.isCorrect)) {
+    throw AppError.badRequest("Questions with options must contain at least 1 correct option");
+  }
+
+  return normalized;
 }
 
 const courseService = {
@@ -710,6 +765,63 @@ const courseService = {
 
     await courseRepository.adjustContentStats(courseId, { questions: 1 });
     return courseDto.toQuestionItem(question);
+  },
+
+  async updateQuestion(courseId, chapterId, lessonId, questionId, userId, body) {
+    if (!userId) throw AppError.unauthorized("Authentication required.");
+
+    const [course, chapter, lesson, question] = await Promise.all([
+      courseRepository.findById(courseId),
+      courseRepository.findChapterById(chapterId),
+      courseRepository.findLessonById(lessonId),
+      courseRepository.findQuestionById(questionId),
+    ]);
+    if (!course || !course.is_active) throw AppError.notFound("Course not found");
+    if (course.creator_id !== userId) throw AppError.forbidden("Not authorized");
+
+    if (!chapter || chapter.course_id !== courseId || !chapter.is_active) {
+      throw AppError.notFound("Chapter not found");
+    }
+
+    if (!lesson || lesson.chapter_id !== chapterId || lesson.is_active === false) {
+      throw AppError.notFound("Lesson not found");
+    }
+
+    if (!question || question.lesson_id !== lessonId || question.status === "deleted") {
+      throw AppError.notFound("Question not found");
+    }
+
+    const questionType = body.questionType ?? body.type;
+    const questionText = normalizeRequiredPatchText(body.questionText, "questionText");
+    const questionExplanation = normalizeOptionalPatchText(
+      body.questionExplanation !== undefined ? body.questionExplanation : body.explanation
+    );
+    const difficultyLevel = body.difficultyLevel ?? body.difficulty;
+    const options = normalizeQuestionOptionsForUpdate(
+      body.options,
+      questionType ?? question.question_type
+    );
+
+    if (
+      questionType === undefined &&
+      questionText === undefined &&
+      questionExplanation === undefined &&
+      difficultyLevel === undefined &&
+      options === undefined
+    ) {
+      throw AppError.badRequest("At least one updatable field is required");
+    }
+
+    const updated = await courseRepository.updateQuestion(questionId, {
+      questionType,
+      questionText,
+      questionExplanation,
+      difficultyLevel,
+      options,
+      updatedBy: userId,
+    });
+
+    return courseDto.toQuestionItem(updated);
   },
 
   async deleteQuestion(courseId, chapterId, lessonId, questionId, userId) {

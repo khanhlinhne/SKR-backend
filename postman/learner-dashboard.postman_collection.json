@@ -1,0 +1,157 @@
+{
+  "info": {
+    "_postman_id": "64d1fd2b-2a17-4b98-9174-bef59eb83534",
+    "name": "SKR Learner Dashboard",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Login status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "pm.test('Login response contains access token', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "  pm.expect(json.data.tokens.accessToken).to.be.a('string').and.not.empty;",
+              "});",
+              "",
+              "pm.collectionVariables.set('accessToken', json.data.tokens.accessToken);",
+              "pm.collectionVariables.set('timezoneOffset', json.data.user.timezoneOffset ?? 7);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Get Learner Dashboard",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          },
+          {
+            "key": "X-Timezone-Offset",
+            "value": "{{timezoneOffset}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/dashboard/me?days=12&coursesLimit=4&reviewLimit=5",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "dashboard",
+            "me"
+          ],
+          "query": [
+            {
+              "key": "days",
+              "value": "12"
+            },
+            {
+              "key": "coursesLimit",
+              "value": "4"
+            },
+            {
+              "key": "reviewLimit",
+              "value": "5"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Dashboard status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "pm.test('Dashboard response is successful', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "});",
+              "",
+              "pm.test('Dashboard has learner sections', function () {",
+              "  pm.expect(json.data).to.have.property('user');",
+              "  pm.expect(json.data).to.have.property('studyTime');",
+              "  pm.expect(json.data).to.have.property('performance');",
+              "  pm.expect(json.data).to.have.property('todayReviews');",
+              "  pm.expect(json.data).to.have.property('quickStats');",
+              "  pm.expect(json.data).to.have.property('myCourses');",
+              "});",
+              "",
+              "pm.test('Study chart returns 12 points', function () {",
+              "  pm.expect(json.data.studyTime.chart).to.be.an('array');",
+              "  pm.expect(json.data.studyTime.chart.length).to.eql(12);",
+              "});",
+              "",
+              "pm.test('My courses items respects limit', function () {",
+              "  pm.expect(json.data.myCourses.items.length).to.be.at.most(4);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "email",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "timezoneOffset",
+      "value": "7"
+    }
+  ]
+}

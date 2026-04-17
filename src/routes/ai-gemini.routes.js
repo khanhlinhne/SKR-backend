@@ -1,7 +1,8 @@
 const { Router } = require("express");
 const aiGeminiController = require("../controllers/ai-gemini.controller");
+const aiChatController = require("../controllers/ai-chat.controller");
 const { validate } = require("../middlewares/validate.middleware");
-const { authenticateOptional } = require("../middlewares/auth.middleware");
+const { authenticate, authenticateOptional } = require("../middlewares/auth.middleware");
 const {
   generateQuestionsRules,
   refineQuestionsRules,
@@ -9,6 +10,7 @@ const {
   listGenerationsRules,
   getGenerationByIdRules,
 } = require("../validators/ai-gemini.validator");
+const { chatRules } = require("../validators/ai-chat.validator");
 
 const router = Router();
 
@@ -222,5 +224,18 @@ router.get(
   validate,
   aiGeminiController.getGenerationById
 );
+
+/**
+ * @swagger
+ * /api/ai-gemini/chat:
+ *   post:
+ *     tags: [AI Gemini]
+ *     summary: Alias of learner AI chat
+ *     description: |
+ *       Backward-compatible alias for **POST /api/ai-chat**. Requires Bearer token and answers from real learner data in the database.
+ *     security:
+ *       - BearerAuth: []
+ */
+router.post("/chat", authenticate, chatRules, validate, aiChatController.chat);
 
 module.exports = router;

@@ -19,6 +19,7 @@ const {
   createLessonRules,
   updateLessonRules,
   deleteLessonRules,
+  updateQuestionRules,
 } = require("../validators/course.validator");
 
 const router = Router();
@@ -755,6 +756,15 @@ router.post(
   authenticate,
   authorize("admin", "creator"),
   courseController.addQuestion
+);
+
+router.patch(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/questions/:questionId",
+  authenticate,
+  authorize("admin", "creator"),
+  updateQuestionRules,
+  validate,
+  courseController.updateQuestion
 );
 
 router.delete(
