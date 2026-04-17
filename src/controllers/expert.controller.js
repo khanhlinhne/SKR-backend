@@ -2,6 +2,16 @@ const { expertService, userIsAdmin } = require("../services/expert.service");
 const { success } = require("../utils/response.util");
 
 const expertController = {
+  async getMyDashboard(req, res, next) {
+    try {
+      const period = req.query.period || "month";
+      const data = await expertService.getMyDashboard(req.user?.userId, period);
+      return success(res, { message: "Expert dashboard retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async listExperts(req, res, next) {
     try {
       const isAdmin = await userIsAdmin(req.user?.userId);

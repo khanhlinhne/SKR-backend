@@ -62,6 +62,7 @@ const config = {
     apiKey: process.env.SEPAY_API_KEY || "",
     apiBaseUrl: process.env.SEPAY_API_BASE_URL || "",
     createOrderPath: process.env.SEPAY_CREATE_ORDER_PATH || "/v1/payment-requests",
+    bankAccountId: process.env.SEPAY_BANK_ACCOUNT_ID || "",
     webhookSecret: process.env.SEPAY_WEBHOOK_SECRET || "",
     timeoutMs: parseInt(process.env.SEPAY_TIMEOUT_MS, 10) || 15000,
 

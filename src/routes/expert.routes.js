@@ -8,6 +8,7 @@ const {
   createExpertRules,
   updateExpertRules,
 } = require("../validators/expert.validator");
+const { dashboardQueryRules } = require("../validators/dashboard.validator");
 
 const router = Router();
 
@@ -43,6 +44,35 @@ const router = Router();
  *         description: Experts retrieved successfully
  */
 router.get("/", authenticateOptional, getExpertsRules, validate, expertController.listExperts);
+
+/**
+ * @swagger
+ * /api/experts/dashboard/me:
+ *   get:
+ *     tags: [Expert]
+ *     summary: Expert dashboard (Creator/Admin)
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [week, month, year]
+ *           default: month
+ *     responses:
+ *       200:
+ *         description: Expert dashboard retrieved successfully
+ */
+router.get(
+  "/dashboard/me",
+  authenticate,
+  authorize("creator", "admin"),
+  dashboardQueryRules,
+  validate,
+  expertController.getMyDashboard
+);
 
 /**
  * @swagger

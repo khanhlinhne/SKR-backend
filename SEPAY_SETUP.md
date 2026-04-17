@@ -17,8 +17,9 @@ Them vao `.env`:
 ```env
 SEPAY_ENABLED=true
 SEPAY_API_KEY=your_sepay_api_key
-SEPAY_API_BASE_URL=https://api.sepay.vn
-SEPAY_CREATE_ORDER_PATH=/v1/payment-requests
+SEPAY_API_BASE_URL=https://userapi.sepay.vn
+SEPAY_CREATE_ORDER_PATH=/v2/bank-accounts/{ba_id}/orders
+SEPAY_BANK_ACCOUNT_ID=uuid_from_bank_accounts_api
 SEPAY_WEBHOOK_SECRET=your_webhook_secret
 SEPAY_TIMEOUT_MS=15000
 
