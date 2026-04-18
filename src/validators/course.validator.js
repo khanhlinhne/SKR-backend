@@ -1,6 +1,4 @@
 const { query, param, body } = require("express-validator");
-const QUESTION_DIFFICULTY_LEVELS = ["easy", "medium", "hard", "expert"];
-const QUESTION_TYPES = ["multiple_choice", "true_false", "essay", "short_answer", "fill_in_blank"];
 
 const getCoursesRules = [
   query("page")
@@ -179,19 +177,6 @@ const courseIdParamRules = [
     .isUUID().withMessage("Course ID must be a valid UUID"),
 ];
 
-const updateCourseProgressRules = [
-  param("courseId")
-    .isUUID().withMessage("Course ID must be a valid UUID"),
-  body("lessonId")
-    .isUUID().withMessage("lessonId must be a valid UUID"),
-  body("chapterId")
-    .optional()
-    .isUUID().withMessage("chapterId must be a valid UUID"),
-  body("completed")
-    .isBoolean().withMessage("completed must be a boolean")
-    .toBoolean(),
-];
-
 const createChapterRules = [
   param("courseId")
     .isUUID().withMessage("Course ID must be a valid UUID"),
@@ -328,64 +313,6 @@ const deleteLessonRules = [
     .isUUID().withMessage("Lesson ID must be a valid UUID"),
 ];
 
-const updateQuestionRules = [
-  param("courseId")
-    .isUUID().withMessage("Course ID must be a valid UUID"),
-  param("chapterId")
-    .isUUID().withMessage("Chapter ID must be a valid UUID"),
-  param("lessonId")
-    .isUUID().withMessage("Lesson ID must be a valid UUID"),
-  param("questionId")
-    .isUUID().withMessage("Question ID must be a valid UUID"),
-  body("questionText")
-    .optional()
-    .isString().withMessage("questionText must be a string")
-    .trim()
-    .notEmpty().withMessage("questionText cannot be empty"),
-  body("questionType")
-    .optional()
-    .isIn(QUESTION_TYPES)
-    .withMessage(`questionType must be one of: ${QUESTION_TYPES.join(", ")}`),
-  body("type")
-    .optional()
-    .isIn(QUESTION_TYPES)
-    .withMessage(`type must be one of: ${QUESTION_TYPES.join(", ")}`),
-  body("difficultyLevel")
-    .optional()
-    .isIn(QUESTION_DIFFICULTY_LEVELS)
-    .withMessage(`difficultyLevel must be one of: ${QUESTION_DIFFICULTY_LEVELS.join(", ")}`),
-  body("difficulty")
-    .optional()
-    .isIn(QUESTION_DIFFICULTY_LEVELS)
-    .withMessage(`difficulty must be one of: ${QUESTION_DIFFICULTY_LEVELS.join(", ")}`),
-  body("questionExplanation")
-    .optional()
-    .isString().withMessage("questionExplanation must be a string")
-    .trim(),
-  body("explanation")
-    .optional()
-    .isString().withMessage("explanation must be a string")
-    .trim(),
-  body("options")
-    .optional()
-    .isArray({ min: 1 }).withMessage("options must be a non-empty array"),
-  body("options.*.optionText")
-    .if(body("options").exists())
-    .isString().withMessage("options.optionText must be a string")
-    .trim()
-    .notEmpty().withMessage("options.optionText cannot be empty"),
-  body("options.*.optionOrder")
-    .optional()
-    .isInt({ min: 0 }).withMessage("options.optionOrder must be a non-negative integer"),
-  body("options.*.isCorrect")
-    .optional()
-    .isBoolean().withMessage("options.isCorrect must be a boolean"),
-  body("options.*.optionExplanation")
-    .optional()
-    .isString().withMessage("options.optionExplanation must be a string")
-    .trim(),
-];
-
 module.exports = {
   getCoursesRules,
   getCourseDetailRules,
@@ -393,12 +320,10 @@ module.exports = {
   updateCourseRules,
   deleteCourseRules,
   courseIdParamRules,
-  updateCourseProgressRules,
   createChapterRules,
   updateChapterRules,
   deleteChapterRules,
   createLessonRules,
   updateLessonRules,
   deleteLessonRules,
-  updateQuestionRules,
 };
