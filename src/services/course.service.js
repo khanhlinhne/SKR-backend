@@ -1,10 +1,8 @@
 const path = require("path");
 const AppError = require("../utils/AppError");
 const courseRepository = require("../repositories/course.repository");
-const courseProgressRepository = require("../repositories/course-progress.repository");
 const userRepository = require("../repositories/user.repository");
 const courseDto = require("../dtos/course.dto");
-const { isMissingTableError } = require("../utils/prisma.util");
 
 const ALLOWED_SORT_FIELDS = {
   createdAt: "created_at_utc",
@@ -22,7 +20,6 @@ const VALID_CONTENT_VISIBILITY = new Set([
   "premium_only",
   "unlisted",
 ]);
-const OPTION_BASED_QUESTION_TYPES = new Set(["multiple_choice", "true_false"]);
 
 function normalizeOptionalText(value) {
   if (typeof value !== "string") return value ?? undefined;
@@ -64,114 +61,6 @@ function getFileNameFromUrl(fileUrl) {
 function getFileTypeFromName(fileName) {
   const extension = path.extname(fileName || "").slice(1).toLowerCase();
   return extension || undefined;
-}
-
-function normalizeRequiredPatchText(value, fieldName) {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") return value;
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw AppError.badRequest(`${fieldName} cannot be empty`);
-  }
-
-  return trimmed;
-}
-
-function normalizeOptionalPatchText(value) {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  if (typeof value !== "string") return value;
-
-  const trimmed = value.trim();
-  return trimmed || null;
-}
-
-function normalizeQuestionOptionsForUpdate(options, questionType) {
-  if (options === undefined) return undefined;
-  if (!Array.isArray(options)) return options;
-
-  const normalized = options.map((option, index) => {
-    const optionText = normalizeRequiredPatchText(option?.optionText, `options[${index}].optionText`);
-
-    return {
-      optionText,
-      optionOrder:
-        option?.optionOrder !== undefined
-          ? normalizeOptionalInteger(option.optionOrder)
-          : index,
-      isCorrect: option?.isCorrect === true,
-      optionExplanation: normalizeOptionalPatchText(option?.optionExplanation),
-    };
-  });
-
-  if (OPTION_BASED_QUESTION_TYPES.has(questionType)) {
-    if (normalized.length < 2) {
-      throw AppError.badRequest("Option-based questions must contain at least 2 options");
-    }
-
-    if (!normalized.some((option) => option.isCorrect)) {
-      throw AppError.badRequest("Option-based questions must contain at least 1 correct option");
-    }
-  } else if (!normalized.some((option) => option.isCorrect)) {
-    throw AppError.badRequest("Questions with options must contain at least 1 correct option");
-  }
-
-  return normalized;
-}
-
-function getMostRecentDate(dates = []) {
-  return dates
-    .filter(Boolean)
-    .reduce((latest, current) => {
-      if (!latest) return current;
-      return new Date(current) > new Date(latest) ? current : latest;
-    }, null);
-}
-
-function buildCourseProgressSnapshot({ courseId, learnerId, purchase, structure, progressRows }) {
-  const orderedLessonIds = [];
-  const chapters = (structure || []).map((chapter) => {
-    const lessonIds = (chapter.mst_lessons || []).map((lesson) => lesson.lesson_id);
-    orderedLessonIds.push(...lessonIds);
-
-    return {
-      chapterId: chapter.chapter_id,
-      lessonIds,
-    };
-  });
-
-  const activeLessonIdSet = new Set(orderedLessonIds);
-  const completedSet = new Set(
-    (progressRows || [])
-      .filter((row) => row.completed === true && activeLessonIdSet.has(row.lesson_id))
-      .map((row) => row.lesson_id)
-  );
-  const completedLessonIds = orderedLessonIds.filter((lessonId) => completedSet.has(lessonId));
-  const totalLessons = orderedLessonIds.length;
-  const completedLessons = completedLessonIds.length;
-  const chaptersCompleted = chapters.filter(
-    (chapter) =>
-      chapter.lessonIds.length > 0 && chapter.lessonIds.every((lessonId) => completedSet.has(lessonId))
-  ).length;
-  const progressPercent =
-    totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
-  const updatedAt = getMostRecentDate([
-    purchase?.updated_at_utc,
-    purchase?.created_at_utc,
-    ...(progressRows || []).flatMap((row) => [row.updated_at_utc, row.created_at_utc, row.completed_at_utc]),
-  ]);
-
-  return {
-    courseId,
-    learnerId,
-    totalLessons,
-    completedLessons,
-    chaptersCompleted,
-    progressPercent,
-    completedLessonIds,
-    updatedAt,
-  };
 }
 
 const courseService = {
@@ -248,166 +137,6 @@ const courseService = {
     }
 
     return courseDto.toDetail(course);
-  },
-
-  async getCourseProgress(courseId, userId) {
-    if (!userId) {
-      throw AppError.unauthorized("Authentication required to view course progress.");
-    }
-
-    const course = await courseRepository.findById(courseId);
-    if (!course || !course.is_active) {
-      throw AppError.notFound("Course not found");
-    }
-
-    const purchase = await courseProgressRepository.findPurchaseByUserAndCourse(userId, courseId);
-    if (!purchase || purchase.status !== "active") {
-      throw AppError.forbidden("You are not enrolled in this course");
-    }
-
-    let structure;
-    let progressRows;
-    try {
-      [structure, progressRows] = await Promise.all([
-        courseProgressRepository.findActiveCourseStructure(courseId),
-        courseProgressRepository.findLessonProgressRows(purchase.purchase_id),
-      ]);
-    } catch (error) {
-      if (isMissingTableError(error, "lrn_course_lesson_progress")) {
-        throw AppError.serviceUnavailable(
-          "Course progress storage is not initialized. Please create table lrn_subject_lesson_progress first."
-        );
-      }
-      throw error;
-    }
-
-    return buildCourseProgressSnapshot({
-      courseId,
-      learnerId: userId,
-      purchase,
-      structure,
-      progressRows,
-    });
-  },
-
-  async updateCourseProgress(courseId, userId, body) {
-    if (!userId) {
-      throw AppError.unauthorized("Authentication required to update course progress.");
-    }
-
-    const course = await courseRepository.findById(courseId);
-    if (!course || !course.is_active) {
-      throw AppError.notFound("Course not found");
-    }
-
-    const purchase = await courseProgressRepository.findPurchaseByUserAndCourse(userId, courseId);
-    if (!purchase || purchase.status !== "active") {
-      throw AppError.forbidden("You are not enrolled in this course");
-    }
-
-    const lesson = await courseProgressRepository.findLessonContext(body.lessonId);
-    if (!lesson || lesson.is_active === false) {
-      throw AppError.notFound("Lesson not found");
-    }
-
-    const lessonChapter = lesson.mst_chapters;
-    if (!lessonChapter || lessonChapter.is_active === false || lessonChapter.course_id !== courseId) {
-      throw AppError.badRequest("Lesson does not belong to this course");
-    }
-
-    if (body.chapterId && lesson.chapter_id !== body.chapterId) {
-      throw AppError.badRequest("Lesson does not belong to the provided chapter");
-    }
-
-    let structure;
-    let existingRows;
-    try {
-      [structure, existingRows] = await Promise.all([
-        courseProgressRepository.findActiveCourseStructure(courseId),
-        courseProgressRepository.findLessonProgressRows(purchase.purchase_id),
-      ]);
-    } catch (error) {
-      if (isMissingTableError(error, "lrn_course_lesson_progress")) {
-        throw AppError.serviceUnavailable(
-          "Course progress storage is not initialized. Please create table lrn_subject_lesson_progress first."
-        );
-      }
-      throw error;
-    }
-
-    const updatedAt = new Date();
-    const targetChapterId = body.chapterId || lesson.chapter_id;
-    const targetIndex = existingRows.findIndex((row) => row.lesson_id === body.lessonId);
-    const nextRows = [...existingRows];
-
-    if (targetIndex >= 0) {
-      nextRows[targetIndex] = {
-        ...nextRows[targetIndex],
-        chapter_id: targetChapterId,
-        completed: body.completed,
-        completed_at_utc: body.completed
-          ? nextRows[targetIndex].completed_at_utc || updatedAt
-          : null,
-        updated_at_utc: updatedAt,
-      };
-    } else {
-      nextRows.push({
-        lesson_id: body.lessonId,
-        chapter_id: targetChapterId,
-        completed: body.completed,
-        completed_at_utc: body.completed ? updatedAt : null,
-        created_at_utc: updatedAt,
-        updated_at_utc: updatedAt,
-      });
-    }
-
-    const snapshot = buildCourseProgressSnapshot({
-      courseId,
-      learnerId: userId,
-      purchase: {
-        ...purchase,
-        updated_at_utc: updatedAt,
-      },
-      structure,
-      progressRows: nextRows,
-    });
-
-    const completedAtUtc =
-      snapshot.totalLessons > 0 && snapshot.completedLessons === snapshot.totalLessons
-        ? updatedAt
-        : null;
-
-    try {
-      await courseProgressRepository.saveLessonProgressAndPurchaseSnapshot({
-        purchaseId: purchase.purchase_id,
-        courseId,
-        userId,
-        chapterId: targetChapterId,
-        lessonId: body.lessonId,
-        completed: body.completed,
-        completedLessons: snapshot.completedLessons,
-        chaptersCompleted: snapshot.chaptersCompleted,
-        progressPercent: snapshot.progressPercent,
-        totalLessons: snapshot.totalLessons,
-        completedAtUtc,
-        updatedAt,
-      });
-    } catch (error) {
-      if (isMissingTableError(error, "lrn_course_lesson_progress")) {
-        throw AppError.serviceUnavailable(
-          "Course progress storage is not initialized. Please create table lrn_subject_lesson_progress first."
-        );
-      }
-      throw error;
-    }
-
-    return {
-      ...snapshot,
-      lessonId: body.lessonId,
-      chapterId: targetChapterId,
-      completed: body.completed,
-      updatedAt,
-    };
   },
 
   async createCourse(userId, body) {
@@ -981,63 +710,6 @@ const courseService = {
 
     await courseRepository.adjustContentStats(courseId, { questions: 1 });
     return courseDto.toQuestionItem(question);
-  },
-
-  async updateQuestion(courseId, chapterId, lessonId, questionId, userId, body) {
-    if (!userId) throw AppError.unauthorized("Authentication required.");
-
-    const [course, chapter, lesson, question] = await Promise.all([
-      courseRepository.findById(courseId),
-      courseRepository.findChapterById(chapterId),
-      courseRepository.findLessonById(lessonId),
-      courseRepository.findQuestionById(questionId),
-    ]);
-    if (!course || !course.is_active) throw AppError.notFound("Course not found");
-    if (course.creator_id !== userId) throw AppError.forbidden("Not authorized");
-
-    if (!chapter || chapter.course_id !== courseId || !chapter.is_active) {
-      throw AppError.notFound("Chapter not found");
-    }
-
-    if (!lesson || lesson.chapter_id !== chapterId || lesson.is_active === false) {
-      throw AppError.notFound("Lesson not found");
-    }
-
-    if (!question || question.lesson_id !== lessonId || question.status === "deleted") {
-      throw AppError.notFound("Question not found");
-    }
-
-    const questionType = body.questionType ?? body.type;
-    const questionText = normalizeRequiredPatchText(body.questionText, "questionText");
-    const questionExplanation = normalizeOptionalPatchText(
-      body.questionExplanation !== undefined ? body.questionExplanation : body.explanation
-    );
-    const difficultyLevel = body.difficultyLevel ?? body.difficulty;
-    const options = normalizeQuestionOptionsForUpdate(
-      body.options,
-      questionType ?? question.question_type
-    );
-
-    if (
-      questionType === undefined &&
-      questionText === undefined &&
-      questionExplanation === undefined &&
-      difficultyLevel === undefined &&
-      options === undefined
-    ) {
-      throw AppError.badRequest("At least one updatable field is required");
-    }
-
-    const updated = await courseRepository.updateQuestion(questionId, {
-      questionType,
-      questionText,
-      questionExplanation,
-      difficultyLevel,
-      options,
-      updatedBy: userId,
-    });
-
-    return courseDto.toQuestionItem(updated);
   },
 
   async deleteQuestion(courseId, chapterId, lessonId, questionId, userId) {

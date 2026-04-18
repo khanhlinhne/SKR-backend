@@ -22,28 +22,6 @@ const courseController = {
     }
   },
 
-  async getCourseProgress(req, res, next) {
-    try {
-      const data = await courseService.getCourseProgress(req.params.courseId, req.user?.userId);
-      return success(res, { message: "Course progress retrieved successfully", data });
-    } catch (err) {
-      next(err);
-    }
-  },
-
-  async updateCourseProgress(req, res, next) {
-    try {
-      const data = await courseService.updateCourseProgress(
-        req.params.courseId,
-        req.user?.userId,
-        req.body
-      );
-      return success(res, { message: "Course progress updated successfully", data });
-    } catch (err) {
-      next(err);
-    }
-  },
-
   async createCourse(req, res, next) {
     try {
       const data = await courseService.createCourse(req.user?.userId, req.body);
@@ -259,22 +237,6 @@ const courseController = {
         req.body
       );
       return success(res, { statusCode: 201, message: "Question added successfully", data });
-    } catch (err) {
-      next(err);
-    }
-  },
-
-  async updateQuestion(req, res, next) {
-    try {
-      const data = await courseService.updateQuestion(
-        req.params.courseId,
-        req.params.chapterId,
-        req.params.lessonId,
-        req.params.questionId,
-        req.user?.userId,
-        req.body
-      );
-      return success(res, { message: "Question updated successfully", data });
     } catch (err) {
       next(err);
     }
