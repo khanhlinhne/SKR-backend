@@ -1,4 +1,6 @@
 const { expertService, userIsAdmin } = require("../services/expert.service");
+const expertAnalyticsService = require("../services/expert-analytics.service");
+const expertAnalyticsDto = require("../dtos/expert-analytics.dto");
 const { success } = require("../utils/response.util");
 
 const expertController = {
@@ -54,6 +56,60 @@ const expertController = {
     try {
       const data = await expertService.deleteExpert(req.params.expertId, req.user?.userId);
       return success(res, { message: "Expert deleted successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getCourseAnalyticsOverview(req, res, next) {
+    try {
+      const data = await expertAnalyticsService.getCourseAnalyticsOverview(
+        req.params.courseId,
+        req.user?.userId,
+        req.query,
+        req.user?.roles
+      );
+      req.user = req.user || {};
+      req.user.timezoneOffset = data.timezoneOffset ?? req.user.timezoneOffset;
+      return success(res, {
+        message: "Course analytics overview retrieved successfully",
+        data: expertAnalyticsDto.sanitizeOverviewResponse(data),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async listCourseEnrollments(req, res, next) {
+    try {
+      const data = await expertAnalyticsService.listCourseEnrollments(
+        req.params.courseId,
+        req.user?.userId,
+        req.query,
+        req.user?.roles
+      );
+      req.user = req.user || {};
+      req.user.timezoneOffset = data.timezoneOffset ?? req.user.timezoneOffset;
+      return success(res, {
+        message: "Course enrollments retrieved successfully",
+        data: expertAnalyticsDto.sanitizeEnrollmentListResponse(data),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async exportCourseEnrollments(req, res, next) {
+    try {
+      const data = await expertAnalyticsService.exportCourseEnrollmentsCsv(
+        req.params.courseId,
+        req.user?.userId,
+        req.query,
+        req.user?.roles
+      );
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${data.filename}"`);
+      return res.status(200).send(data.csv);
     } catch (err) {
       next(err);
     }

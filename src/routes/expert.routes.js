@@ -9,6 +9,12 @@ const {
   updateExpertRules,
 } = require("../validators/expert.validator");
 const { dashboardQueryRules } = require("../validators/dashboard.validator");
+const {
+  courseIdParamRules,
+  analyticsQueryRules,
+  enrollmentListQueryRules,
+  enrollmentExportQueryRules,
+} = require("../validators/expert-analytics.validator");
 
 const router = Router();
 
@@ -72,6 +78,61 @@ router.get(
   dashboardQueryRules,
   validate,
   expertController.getMyDashboard
+);
+
+/**
+ * @swagger
+ * /api/experts/courses/{courseId}/analytics/overview:
+ *   get:
+ *     tags: [Expert]
+ *     summary: Course analytics overview (Creator/Admin)
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get(
+  "/courses/:courseId/analytics/overview",
+  authenticate,
+  authorize("creator", "admin"),
+  courseIdParamRules,
+  analyticsQueryRules,
+  validate,
+  expertController.getCourseAnalyticsOverview
+);
+
+/**
+ * @swagger
+ * /api/experts/courses/{courseId}/enrollments:
+ *   get:
+ *     tags: [Expert]
+ *     summary: List course enrollments (Creator/Admin)
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get(
+  "/courses/:courseId/enrollments",
+  authenticate,
+  authorize("creator", "admin"),
+  enrollmentListQueryRules,
+  validate,
+  expertController.listCourseEnrollments
+);
+
+/**
+ * @swagger
+ * /api/experts/courses/{courseId}/enrollments/export:
+ *   get:
+ *     tags: [Expert]
+ *     summary: Export course enrollments as CSV (Creator/Admin)
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get(
+  "/courses/:courseId/enrollments/export",
+  authenticate,
+  authorize("creator", "admin"),
+  enrollmentExportQueryRules,
+  validate,
+  expertController.exportCourseEnrollments
 );
 
 /**
