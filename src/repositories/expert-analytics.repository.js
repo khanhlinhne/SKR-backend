@@ -64,6 +64,13 @@ const enrollmentSelect = {
   },
   pmt_orders: {
     select: {
+      order_id: true,
+      order_code: true,
+      order_type: true,
+      customer_email: true,
+      customer_name: true,
+      customer_phone: true,
+      created_at_utc: true,
       payment_status: true,
       total_amount: true,
       currency_code: true,

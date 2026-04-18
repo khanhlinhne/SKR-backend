@@ -191,6 +191,46 @@ const courseRepository = {
     });
   },
 
+  async updateCommerceStats(courseId, db = prisma) {
+    const purchaseWhere = {
+      course_id: courseId,
+      status: { in: ["active", "completed"] },
+      OR: [
+        { order_id: null },
+        {
+          pmt_orders: {
+            payment_status: "completed",
+            cancelled_at_utc: null,
+            refunded_at_utc: null,
+          },
+        },
+      ],
+    };
+
+    const [purchaseCount, ratingAggregate] = await Promise.all([
+      db.pmt_course_purchases.count({
+        where: purchaseWhere,
+      }),
+      db.pmt_course_purchases.aggregate({
+        where: {
+          ...purchaseWhere,
+          user_rating: { not: null },
+        },
+        _avg: { user_rating: true },
+        _count: { user_rating: true },
+      }),
+    ]);
+
+    return db.mst_courses.update({
+      where: { course_id: courseId },
+      data: {
+        purchase_count: purchaseCount,
+        rating_average: ratingAggregate._avg.user_rating ?? null,
+        rating_count: ratingAggregate._count.user_rating || 0,
+      },
+    });
+  },
+
   async adjustContentStats(courseId, { videos = 0, documents = 0, questions = 0 } = {}) {
     const deltaVideos = Number(videos) || 0;
     const deltaDocuments = Number(documents) || 0;

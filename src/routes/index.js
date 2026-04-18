@@ -10,10 +10,13 @@ const packageRoutes = require("./package.routes");
 const aiGeminiRoutes = require("./ai-gemini.routes");
 const registrationAdminRoutes = require("./registration-admin.routes");
 const dashboardAdminRoutes = require("./dashboard-admin.routes");
+const dashboardRoutes = require("./dashboard.routes");
 const enrollmentRoutes = require("./enrollment.routes");
 const quizRoutes = require("./quiz.routes");
 const quizAttemptRoutes = require("./quiz-attempts.routes");
 const orderRoutes = require("./order.routes");
+const paymentRoutes = require("./payment.routes");
+const expertRoutes = require("./expert.routes");
 
 const router = Router();
 
@@ -30,6 +33,9 @@ router.use("/enrollments", enrollmentRoutes);
 router.use("/quiz-practices", quizRoutes);
 router.use("/quiz-attempts", quizAttemptRoutes);
 router.use("/orders", orderRoutes);
+router.use("/payments", paymentRoutes);
+router.use("/experts", expertRoutes);
+router.use("/dashboard", dashboardRoutes);
 router.use("/admin/registrations", registrationAdminRoutes);
 router.use("/admin/dashboard", dashboardAdminRoutes);
 

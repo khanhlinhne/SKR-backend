@@ -1,4 +1,5 @@
 const prisma = require("../config/prisma");
+const courseRepository = require("./course.repository");
 
 const orderInclude = {
   pmt_order_items: {
@@ -230,7 +231,13 @@ const paymentRepository = {
         return null;
       }
 
+      const courseItems = (transaction.pmt_orders?.pmt_order_items || []).filter((item) =>
+        ["course", "course_included"].includes(item.item_type)
+      );
+      const courseIds = [...new Set(courseItems.map((item) => item.item_id).filter(Boolean))];
+
       if (transaction.payment_status === "completed") {
+        await Promise.all(courseIds.map((courseId) => courseRepository.updateCommerceStats(courseId, tx)));
         return transaction;
       }
 
@@ -258,10 +265,6 @@ const paymentRepository = {
           updated_at_utc: new Date(),
         },
       });
-
-      const courseItems = (order.pmt_order_items || []).filter((item) =>
-        ["course", "course_included"].includes(item.item_type)
-      );
 
       for (const item of courseItems) {
         await tx.pmt_course_purchases.upsert({
@@ -294,6 +297,8 @@ const paymentRepository = {
           },
         });
       }
+
+      await Promise.all(courseIds.map((courseId) => courseRepository.updateCommerceStats(courseId, tx)));
 
       return tx.pmt_transactions.findUnique({
         where: { transaction_id: transactionId },

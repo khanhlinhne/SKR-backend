@@ -64,6 +64,7 @@ const registrationService = {
 
     try {
       const row = await registrationRepository.create(data);
+      await courseRepository.updateCommerceStats(body.courseId);
       return registrationDto.toDetail(row);
     } catch (e) {
       if (e.code === "P2002") {
@@ -105,6 +106,7 @@ const registrationService = {
     if (body.certificateUrl !== undefined) data.certificate_url = body.certificateUrl;
 
     const row = await registrationRepository.update(purchaseId, data);
+    await courseRepository.updateCommerceStats(existing.course_id);
     return registrationDto.toDetail(row);
   },
 

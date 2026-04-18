@@ -57,6 +57,56 @@ function compactNumber(value) {
   return `${Math.round(normalized)}`;
 }
 
+function formatInteger(value) {
+  return Math.round(Number(value) || 0).toLocaleString("en-US");
+}
+
+function formatCurrencyVnd(value) {
+  return `₫${formatInteger(value)}`;
+}
+
+function titleCaseWords(value) {
+  return String(value || "")
+    .split(/[\s_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function mapOrderStatus(paymentStatus) {
+  const code = typeof paymentStatus === "string" ? paymentStatus.trim().toLowerCase() : "pending";
+  const map = {
+    completed: { label: "Hoàn thành", tone: "success" },
+    processing: { label: "Đang xử lý", tone: "warning" },
+    pending: { label: "Chờ thanh toán", tone: "neutral" },
+    failed: { label: "Thất bại", tone: "danger" },
+    cancelled: { label: "Đã hủy", tone: "danger" },
+    refunded: { label: "Hoàn tiền", tone: "info" },
+  };
+
+  return {
+    code,
+    label: map[code]?.label || titleCaseWords(code),
+    tone: map[code]?.tone || "neutral",
+  };
+}
+
+function formatRelativeTimeVi(dateInput) {
+  if (!dateInput) return null;
+
+  const ts = new Date(dateInput).getTime();
+  if (Number.isNaN(ts)) return null;
+
+  const seconds = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+
+  if (seconds < 60) return "Vừa xong";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} phút trước`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} giờ trước`;
+  if (seconds < 2592000) return `${Math.floor(seconds / 86400)} ngày trước`;
+  if (seconds < 31536000) return `${Math.floor(seconds / 2592000)} tháng trước`;
+  return `${Math.floor(seconds / 31536000)} năm trước`;
+}
+
 function parseTimezoneOffsetFromIntlLabel(label) {
   if (!label) return null;
   if (label === "GMT" || label === "UTC") return 0;
@@ -499,6 +549,172 @@ function computeCompletionRate(enrollments) {
   return round1((completed / started) * 100);
 }
 
+function getOrderTimestamp(purchase) {
+  return purchase.pmt_orders?.created_at_utc || purchase.purchased_at_utc || null;
+}
+
+function getPaymentTimestamp(purchase) {
+  return purchase.pmt_orders?.paid_at_utc || purchase.purchased_at_utc || null;
+}
+
+function isOrderCompleted(purchase) {
+  return String(purchase.pmt_orders?.payment_status || "").toLowerCase() === "completed";
+}
+
+function buildOrderStats(enrollments) {
+  const orders = enrollments.filter((purchase) => purchase.order_id);
+  const completedOrders = orders.filter((purchase) => isOrderCompleted(purchase) && purchase.isSuccessfulRevenue);
+  const totalOrders = orders.length;
+  const completedCount = completedOrders.length;
+
+  return {
+    totalOrders,
+    completedOrders: completedCount,
+    pendingOrders: orders.filter((purchase) => String(purchase.pmt_orders?.payment_status || "").toLowerCase() === "pending").length,
+    failedOrders: orders.filter((purchase) =>
+      ["failed", "cancelled", "refunded"].includes(String(purchase.pmt_orders?.payment_status || "").toLowerCase())
+    ).length,
+    value: totalOrders > 0 ? round1((completedCount / totalOrders) * 100) : 0,
+  };
+}
+
+function toOrderAnalyticsItem(purchase, course) {
+  const order = purchase.pmt_orders || {};
+  const status = mapOrderStatus(order.payment_status);
+  const learner = purchase.mst_users || {};
+  const amount = Math.round(purchase.revenueAmount);
+  const createdAt = getOrderTimestamp(purchase);
+  const paidAt = getPaymentTimestamp(purchase);
+  const completedAt = isOrderCompleted(purchase) ? paidAt || createdAt : null;
+
+  return {
+    id: order.order_code || purchase.order_id || purchase.purchase_id,
+    orderId: order.order_id || purchase.order_id,
+    orderCode: order.order_code || null,
+    displayCode: order.order_code ? `#${order.order_code}` : `#${String(purchase.order_id || purchase.purchase_id).slice(0, 8)}`,
+    status: status.code,
+    paymentStatus: status.code,
+    paymentStatusLabel: status.label,
+    paymentStatusTone: status.tone,
+    paymentMethod: "unknown",
+    amount,
+    courseAmount: amount,
+    finalAmount: amount,
+    paidAmount: amount,
+    revenue: amount,
+    amountDisplay: formatCurrencyVnd(amount),
+    currencyCode: purchase.currency_code || order.currency_code || "VND",
+    completedAt,
+    paidAt,
+    paymentDate: paidAt,
+    purchasedAt: purchase.purchased_at_utc || null,
+    orderDate: createdAt,
+    createdAt,
+    createdAtUtc: createdAt,
+    paidAtUtc: paidAt,
+    completedAtUtc: completedAt,
+    customerName: order.customer_name || learner.full_name || learner.display_name || learner.email || null,
+    studentName: learner.full_name || learner.display_name || learner.email || null,
+    fullName: learner.full_name || learner.display_name || learner.email || null,
+    email: learner.email || order.customer_email || null,
+    customerEmail: order.customer_email || learner.email || null,
+    customerPhone: order.customer_phone || learner.phone_number || null,
+    mobile: learner.phone_number || order.customer_phone || null,
+    customerAvatarUrl: learner.avatar_url || null,
+    avatarUrl: learner.avatar_url || null,
+    courseOrItemName: course.course_name || null,
+    courseName: course.course_name || null,
+    courseId: course.course_id,
+    courseCode: course.course_code || null,
+    itemType: order.order_type || purchase.purchase_type || "course_purchase",
+    createdRelative: formatRelativeTimeVi(createdAt),
+  };
+}
+
+function buildRecentOrdersBlock(enrollments, course, { fromUtc, toExclusiveUtc } = {}) {
+  const orders = enrollments
+    .filter((purchase) => purchase.order_id)
+    .filter((purchase) => {
+      if (!fromUtc || !toExclusiveUtc) return true;
+      return isWithinRange(getOrderTimestamp(purchase), fromUtc, toExclusiveUtc);
+    })
+    .sort((left, right) => new Date(getOrderTimestamp(right) || 0).getTime() - new Date(getOrderTimestamp(left) || 0).getTime());
+  const allItems = orders.map((purchase) => toOrderAnalyticsItem(purchase, course));
+  const items = allItems.slice(0, 10);
+
+  return {
+    title: "Đơn hàng gần đây",
+    actionLabel: "Xem tất cả",
+    columns: [
+      { key: "order", label: "Mã đơn" },
+      { key: "course", label: "Khóa học" },
+      { key: "amount", label: "Số tiền" },
+      { key: "status", label: "Trạng thái" },
+    ],
+    total: orders.length,
+    totalDisplay: String(orders.length),
+    itemsAll: allItems,
+    items,
+  };
+}
+
+function buildCourseOverview(course) {
+  const totalChapters = course.total_chapters || 0;
+  const totalLessons = course.total_lessons || 0;
+  const totalVideos = course.total_videos || 0;
+  const totalDocuments = course.total_documents || 0;
+  const totalQuestions = course.total_questions || 0;
+  const estimatedDurationHours = Number(course.estimated_duration_hours || 0);
+
+  return {
+    courseId: course.course_id,
+    courseCode: course.course_code || null,
+    courseName: course.course_name || null,
+    category: course.category || null,
+    totalChapters,
+    totalLessons,
+    totalVideos,
+    totalDocuments,
+    totalQuestions,
+    chapterLessonText: `${totalChapters} chương • ${totalLessons} bài`,
+    estimatedDurationHours,
+    estimatedDurationDisplay: `${round1(estimatedDurationHours)} giờ`,
+    status: course.status || null,
+    publishedAtUtc: course.published_at_utc || null,
+    fields: [
+      { key: "courseCode", label: "Mã khóa", value: course.course_code || "—" },
+      { key: "category", label: "Danh mục", value: course.category || "—" },
+      { key: "chapterLesson", label: "Chương / Bài", value: `${totalChapters} chương • ${totalLessons} bài` },
+      { key: "estimatedDuration", label: "Thời lượng", value: `${round1(estimatedDurationHours)} giờ` },
+      { key: "videos", label: "Video", value: totalVideos },
+      { key: "documents", label: "Tài liệu", value: totalDocuments },
+      { key: "questions", label: "Câu hỏi", value: totalQuestions },
+      { key: "published", label: "Xuất bản", value: course.status === "published" ? "Đã xuất bản" : "—" },
+    ],
+  };
+}
+
+function buildExpertBlock(course) {
+  const expert = course.mst_users || null;
+
+  return {
+    expertId: course.creator_id || null,
+    fullName: expert?.full_name || expert?.display_name || expert?.email || null,
+    displayName: expert?.display_name || expert?.full_name || null,
+    email: expert?.email || null,
+    avatarUrl: expert?.avatar_url || null,
+    user: expert
+      ? {
+          userId: expert.user_id,
+          fullName: expert.full_name,
+          displayName: expert.display_name,
+          email: expert.email,
+          avatarUrl: expert.avatar_url,
+        }
+      : null,
+  };
+}
+
 function computeSummaryStats(filteredEnrollments) {
   const successfulRevenue = filteredEnrollments
     .filter((purchase) => purchase.isSuccessfulRevenue)
@@ -698,27 +914,27 @@ const expertAnalyticsService = {
     const previousEnrollments = enrollments.filter((purchase) =>
       isWithinRange(purchase.purchased_at_utc, range.previousFromUtc, range.previousToExclusiveUtc)
     );
+    const currentOrders = enrollments.filter((purchase) =>
+      purchase.order_id && isWithinRange(getOrderTimestamp(purchase), range.fromUtc, range.toExclusiveUtc)
+    );
+    const previousOrders = enrollments.filter((purchase) =>
+      purchase.order_id && isWithinRange(getOrderTimestamp(purchase), range.previousFromUtc, range.previousToExclusiveUtc)
+    );
     const todayStartUtc = startOfLocalDayUtc(now, timezoneOffset);
 
     const currentRevenue = enrollments
       .filter(
         (purchase) =>
-          purchase.isSuccessfulRevenue &&
-          isWithinRange(purchase.pmt_orders?.paid_at_utc || purchase.purchased_at_utc, range.fromUtc, range.toExclusiveUtc)
+          purchase.isSuccessfulRevenue && isWithinRange(getPaymentTimestamp(purchase), range.fromUtc, range.toExclusiveUtc)
       )
       .reduce((sum, purchase) => sum + purchase.revenueAmount, 0);
     const previousRevenue = enrollments
       .filter(
         (purchase) =>
-          purchase.isSuccessfulRevenue &&
-          isWithinRange(
-            purchase.pmt_orders?.paid_at_utc || purchase.purchased_at_utc,
-            range.previousFromUtc,
-            range.previousToExclusiveUtc
-          )
+          purchase.isSuccessfulRevenue && isWithinRange(getPaymentTimestamp(purchase), range.previousFromUtc, range.previousToExclusiveUtc)
       )
       .reduce((sum, purchase) => sum + purchase.revenueAmount, 0);
-    const totalRevenue = enrollments
+    const lifetimeRevenue = enrollments
       .filter((purchase) => purchase.isSuccessfulRevenue)
       .reduce((sum, purchase) => sum + purchase.revenueAmount, 0);
 
@@ -748,7 +964,7 @@ const expertAnalyticsService = {
     bucketizeSum(
       enrollments.filter((purchase) => purchase.isSuccessfulRevenue),
       currentRevenueBuckets,
-      (purchase) => purchase.pmt_orders?.paid_at_utc || purchase.purchased_at_utc,
+      (purchase) => getPaymentTimestamp(purchase),
       (purchase) => purchase.revenueAmount
     );
     bucketizeCount(currentLessonEvents, currentLessonBuckets, (event) => event.timestamp);
@@ -764,13 +980,18 @@ const expertAnalyticsService = {
     const newStudentsToday = enrollments.filter((purchase) =>
       isWithinRange(purchase.purchased_at_utc, todayStartUtc, addMs(now, 1))
     ).length;
-    const currentCompletionRate = computeCompletionRate(enrollments);
     const currentAvgStudyTime = computeAverageStudyMinutes(currentVideoEvents);
     const previousAvgStudyTime = computeAverageStudyMinutes(previousVideoEvents);
     const currentLessonsViewed = currentLessonEvents.length;
     const previousLessonsViewed = previousLessonEvents.length;
     const ratingSummary = computeAverageRating(enrollments);
     const previousAverageRating = computeHistoricalAverageRating(enrollments, range.fromUtc);
+    const learningCompletionRate = computeCompletionRate(enrollments);
+    const currentOrderStats = buildOrderStats(currentOrders);
+    const previousOrderStats = buildOrderStats(previousOrders);
+    const recentOrders = buildRecentOrdersBlock(enrollments, course, range);
+    const courseOverview = buildCourseOverview(course);
+    const expert = buildExpertBlock(course);
 
     return {
       courseId: course.course_id,
@@ -785,9 +1006,11 @@ const expertAnalyticsService = {
       },
       metrics: {
         totalRevenue: {
-          value: Math.round(totalRevenue),
-          formattedShort: compactNumber(totalRevenue),
+          value: Math.round(currentRevenue),
+          formattedShort: compactNumber(currentRevenue),
           changePct: pctChange(currentRevenue, previousRevenue),
+          totalValue: Math.round(lifetimeRevenue),
+          totalFormattedShort: compactNumber(lifetimeRevenue),
         },
         newStudents: {
           value: currentEnrollments.length,
@@ -795,8 +1018,11 @@ const expertAnalyticsService = {
           changePct: pctChange(currentEnrollments.length, previousEnrollments.length),
         },
         completionRate: {
-          value: currentCompletionRate,
-          changePct: null,
+          value: currentOrderStats.value,
+          changePct: pctChange(currentOrderStats.value, previousOrderStats.value),
+          completedOrders: currentOrderStats.completedOrders,
+          totalOrders: currentOrderStats.totalOrders,
+          fractionDisplay: `${currentOrderStats.completedOrders}/${currentOrderStats.totalOrders} đơn`,
         },
         avgStudyTimeMinutes: {
           value: currentAvgStudyTime,
@@ -817,6 +1043,17 @@ const expertAnalyticsService = {
               : round1(ratingSummary.value - previousAverageRating),
           ratingCount: ratingSummary.ratingCount,
         },
+        orderCompletionRate: {
+          value: currentOrderStats.value,
+          changePct: pctChange(currentOrderStats.value, previousOrderStats.value),
+          completedOrders: currentOrderStats.completedOrders,
+          totalOrders: currentOrderStats.totalOrders,
+          fractionDisplay: `${currentOrderStats.completedOrders}/${currentOrderStats.totalOrders} đơn`,
+        },
+        learningCompletionRate: {
+          value: learningCompletionRate,
+          changePct: null,
+        },
       },
       sparklines: {
         revenue: currentRevenueBuckets.map((bucket) => Math.round(bucket.value)),
@@ -836,7 +1073,35 @@ const expertAnalyticsService = {
       lessonProgress: buildLessonProgress(course, enrollments, lessonProgressRows),
       completionFunnel: buildCompletionFunnel(enrollments),
       ratingBreakdown: buildRatingBreakdown(enrollments),
+      recentOrders,
+      recentOrderItems: {
+        total: recentOrders.total,
+        totalDisplay: recentOrders.totalDisplay,
+        items: recentOrders.itemsAll,
+      },
+      revenueSeries: currentRevenueBuckets.map((bucket) => ({
+        label: bucket.label,
+        revenue: Math.round(bucket.value),
+      })),
+      enrollmentSeries: currentEnrollmentBuckets.map((bucket) => ({
+        label: bucket.label,
+        count: bucket.value,
+      })),
+      courseOverview,
+      expert,
+      orderCompletionRate: {
+        value: currentOrderStats.value,
+        changePct: pctChange(currentOrderStats.value, previousOrderStats.value),
+        completedOrders: currentOrderStats.completedOrders,
+        totalOrders: currentOrderStats.totalOrders,
+        fractionDisplay: `${currentOrderStats.completedOrders}/${currentOrderStats.totalOrders} đơn`,
+      },
       timezoneOffset,
+      ui: {
+        recentOrders,
+        courseOverview,
+        expert,
+      },
     };
   },
 

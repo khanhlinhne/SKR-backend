@@ -75,6 +75,149 @@ const dashboardRepository = {
     }));
   },
 
+  async countCoursesByCreator(creatorId, where = {}) {
+    return prisma.mst_courses.count({
+      where: {
+        creator_id: creatorId,
+        is_active: true,
+        ...where,
+      },
+    });
+  },
+
+  async countActiveStudentsByCreator(creatorId) {
+    const rows = await prisma.pmt_course_purchases.groupBy({
+      by: ["user_id"],
+      where: {
+        status: "active",
+        mst_courses: {
+          creator_id: creatorId,
+          is_active: true,
+        },
+      },
+    });
+
+    return rows.length;
+  },
+
+  async sumPurchaseRevenueByCreator(creatorId, startUtc, endUtc) {
+    const result = await prisma.pmt_course_purchases.aggregate({
+      where: {
+        status: "active",
+        purchased_at_utc: { gte: startUtc, lte: endUtc },
+        mst_courses: {
+          creator_id: creatorId,
+          is_active: true,
+        },
+      },
+      _sum: { purchase_price: true },
+    });
+
+    return result._sum.purchase_price;
+  },
+
+  async getCourseRatingSummaryByCreator(creatorId) {
+    const courses = await prisma.mst_courses.findMany({
+      where: {
+        creator_id: creatorId,
+        is_active: true,
+        rating_average: { not: null },
+      },
+      select: {
+        rating_average: true,
+        rating_count: true,
+      },
+    });
+
+    let ratedCourseCount = 0;
+    let weightedTotal = 0;
+    let totalRatings = 0;
+
+    for (const course of courses) {
+      const ratingCount = Number(course.rating_count || 0);
+      const ratingAverage = Number(course.rating_average || 0);
+
+      if (ratingCount <= 0 || !Number.isFinite(ratingAverage)) {
+        continue;
+      }
+
+      ratedCourseCount += 1;
+      totalRatings += ratingCount;
+      weightedTotal += ratingAverage * ratingCount;
+    }
+
+    return {
+      average: totalRatings > 0 ? weightedTotal / totalRatings : null,
+      ratedCourseCount,
+    };
+  },
+
+  async getMonthlyStudentLoginsByCreator(creatorId, startUtc, endUtc) {
+    return prisma.$queryRaw`
+      SELECT
+        EXTRACT(YEAR FROM u.last_login_at_utc)::int AS year,
+        EXTRACT(MONTH FROM u.last_login_at_utc)::int AS month,
+        COUNT(DISTINCT sp.user_id)::int AS total
+      FROM pmt_subject_purchases sp
+      INNER JOIN mst_subjects s
+        ON s.subject_id = sp.subject_id
+      INNER JOIN mst_users u
+        ON u.user_id = sp.user_id
+      WHERE s.creator_id = ${creatorId}::uuid
+        AND COALESCE(s.is_active, true) = true
+        AND COALESCE(sp.status, 'active') = 'active'
+        AND u.last_login_at_utc IS NOT NULL
+        AND u.last_login_at_utc >= ${startUtc}
+        AND u.last_login_at_utc <= ${endUtc}
+      GROUP BY EXTRACT(YEAR FROM u.last_login_at_utc), EXTRACT(MONTH FROM u.last_login_at_utc)
+      ORDER BY year ASC, month ASC
+    `;
+  },
+
+  async getTopCoursesByCreator(creatorId, take = 5) {
+    const grouped = await prisma.pmt_course_purchases.groupBy({
+      by: ["course_id"],
+      where: {
+        status: "active",
+        mst_courses: {
+          creator_id: creatorId,
+          is_active: true,
+        },
+      },
+      _sum: { purchase_price: true },
+      _count: { _all: true },
+      orderBy: { _sum: { purchase_price: "desc" } },
+      take,
+    });
+
+    if (!grouped.length) {
+      return [];
+    }
+
+    const courseIds = grouped.map((row) => row.course_id);
+    const courses = await prisma.mst_courses.findMany({
+      where: {
+        course_id: { in: courseIds },
+        creator_id: creatorId,
+      },
+      select: {
+        course_id: true,
+        course_name: true,
+        course_code: true,
+        rating_average: true,
+      },
+    });
+    const byId = new Map(courses.map((course) => [course.course_id, course]));
+
+    return grouped.map((row, index) => ({
+      rank: index + 1,
+      courseId: row.course_id,
+      course: byId.get(row.course_id) || null,
+      studentCount: row._count._all,
+      revenue: row._sum.purchase_price,
+    }));
+  },
+
   /** Revenue in date range per course (for growth). */
   async sumPurchaseRevenueByCourse(courseId, startUtc, endUtc) {
     const r = await prisma.pmt_course_purchases.aggregate({
