@@ -21,6 +21,22 @@ const VALID_CONTENT_VISIBILITY = new Set([
   "unlisted",
 ]);
 
+const LESSON_TYPE_ALIASES = {
+  assigment: "assignment",
+  test: "quiz",
+  tests: "quiz",
+  "practice-test": "quiz",
+  practice_test: "quiz",
+};
+
+const VALID_LESSON_TYPES = new Set([
+  "video",
+  "document",
+  "quiz",
+  "flashcard",
+  "assignment",
+]);
+
 function normalizeOptionalText(value) {
   if (typeof value !== "string") return value ?? undefined;
   const trimmed = value.trim();
@@ -41,6 +57,16 @@ function normalizeOptionalBigInt(value) {
   } catch (_error) {
     return undefined;
   }
+}
+
+function normalizeLessonType(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return undefined;
+
+  const resolved = LESSON_TYPE_ALIASES[normalized] || normalized;
+  return VALID_LESSON_TYPES.has(resolved) ? resolved : undefined;
 }
 
 function getFileNameFromUrl(fileUrl) {
@@ -412,6 +438,7 @@ const courseService = {
       displayOrder,
       learningObjectives: body.learningObjectives,
       estimatedDurationMinutes: body.estimatedDurationMinutes,
+      lessonType: normalizeLessonType(body.lessonType ?? body.lesson_type ?? body.type),
       createdBy: userId,
     });
 
@@ -454,6 +481,7 @@ const courseService = {
 
     await courseRepository.updateLesson(lessonId, {
       ...body,
+      lessonType: normalizeLessonType(body.lessonType ?? body.lesson_type ?? body.type),
       updatedBy: userId,
     });
 

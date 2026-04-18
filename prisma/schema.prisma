@@ -638,6 +638,7 @@ model mst_lessons {
   lesson_name                String           @db.VarChar(255)
   lesson_description         String?
   lesson_number              Int?
+  lesson_type                String?          @default("video") @db.VarChar(50)
   display_order              Int?             @default(0)
   learning_objectives        String?
   estimated_duration_minutes Int?

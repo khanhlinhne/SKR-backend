@@ -268,6 +268,18 @@ const createLessonRules = [
   body("estimatedDurationMinutes")
     .optional()
     .isInt({ min: 0 }).withMessage("estimatedDurationMinutes must be a non-negative integer"),
+  body("lessonType")
+    .optional()
+    .isIn(["video", "document", "quiz", "flashcard", "assignment", "assigment"])
+    .withMessage("lessonType must be video, document, quiz, flashcard or assignment"),
+  body("lesson_type")
+    .optional()
+    .isIn(["video", "document", "quiz", "flashcard", "assignment", "assigment"])
+    .withMessage("lesson_type must be video, document, quiz, flashcard or assignment"),
+  body("type")
+    .optional()
+    .isIn(["video", "document", "quiz", "flashcard", "assignment", "assigment"])
+    .withMessage("type must be video, document, quiz, flashcard or assignment"),
 ];
 
 const updateLessonRules = [
@@ -302,6 +314,18 @@ const updateLessonRules = [
   body("estimatedDurationMinutes")
     .optional()
     .isInt({ min: 0 }).withMessage("estimatedDurationMinutes must be a non-negative integer"),
+  body("lessonType")
+    .optional()
+    .isIn(["video", "document", "quiz", "flashcard", "assignment", "assigment"])
+    .withMessage("lessonType must be video, document, quiz, flashcard or assignment"),
+  body("lesson_type")
+    .optional()
+    .isIn(["video", "document", "quiz", "flashcard", "assignment", "assigment"])
+    .withMessage("lesson_type must be video, document, quiz, flashcard or assignment"),
+  body("type")
+    .optional()
+    .isIn(["video", "document", "quiz", "flashcard", "assignment", "assigment"])
+    .withMessage("type must be video, document, quiz, flashcard or assignment"),
 ];
 
 const deleteLessonRules = [

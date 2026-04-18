@@ -120,11 +120,13 @@ function resolveLessonContentCounts(lesson = {}) {
   };
 }
 
-const VALID_LESSON_TYPES = new Set(["video", "document", "quiz", "flashcard"]);
+const VALID_LESSON_TYPES = new Set(["video", "document", "quiz", "flashcard", "assignment"]);
 
 function resolveLessonType(lesson, counts = resolveLessonContentCounts(lesson)) {
   const explicitType =
-    typeof lesson.lesson_type === "string" ? lesson.lesson_type.trim().toLowerCase() : "";
+    typeof (lesson.lesson_type ?? lesson.lessonType ?? lesson.type) === "string"
+      ? String(lesson.lesson_type ?? lesson.lessonType ?? lesson.type).trim().toLowerCase()
+      : "";
 
   if (VALID_LESSON_TYPES.has(explicitType)) {
     return explicitType;
@@ -159,6 +161,7 @@ function toLessonItem(lesson) {
     learningObjectives: lesson.learning_objectives,
     estimatedDurationMinutes: lesson.estimated_duration_minutes,
     lessonType: resolveLessonType(lesson, counts),
+    hasAssignment: resolveLessonType(lesson, counts) === "assignment",
     totalVideos: counts.totalVideos,
     totalDocuments: counts.totalDocuments,
     totalQuestions: counts.totalQuestions,
@@ -186,6 +189,7 @@ function toLessonDetail(lesson) {
     learningObjectives: lesson.learning_objectives,
     estimatedDurationMinutes: lesson.estimated_duration_minutes,
     lessonType: resolveLessonType(lesson, counts),
+    hasAssignment: resolveLessonType(lesson, counts) === "assignment",
     totalVideos: counts.totalVideos,
     totalDocuments: counts.totalDocuments,
     totalQuestions: counts.totalQuestions,
