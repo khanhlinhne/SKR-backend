@@ -1,4 +1,5 @@
 const prisma = require("../config/prisma");
+const { isMissingTableError } = require("../utils/prisma.util");
 
 const ACTIVE_PURCHASE_SELECT = {
   purchase_id: true,
@@ -41,34 +42,48 @@ const learnerDashboardRepository = {
   },
 
   async findLearningStreak(userId) {
-    return prisma.lrn_learning_streaks.findUnique({
-      where: { user_id: userId },
-      select: {
-        current_streak_days: true,
-        longest_streak_days: true,
-        last_activity_date: true,
-        total_study_days: true,
-        total_study_hours: true,
-      },
-    });
+    try {
+      return await prisma.lrn_learning_streaks.findUnique({
+        where: { user_id: userId },
+        select: {
+          current_streak_days: true,
+          longest_streak_days: true,
+          last_activity_date: true,
+          total_study_days: true,
+          total_study_hours: true,
+        },
+      });
+    } catch (error) {
+      if (isMissingTableError(error, "lrn_learning_streaks")) {
+        return null;
+      }
+      throw error;
+    }
   },
 
   async findStudySessionsByDateRange(userId, startDate, endDate) {
-    return prisma.lrn_study_sessions.findMany({
-      where: {
-        user_id: userId,
-        session_date: {
-          gte: startDate,
-          lte: endDate,
+    try {
+      return await prisma.lrn_study_sessions.findMany({
+        where: {
+          user_id: userId,
+          session_date: {
+            gte: startDate,
+            lte: endDate,
+          },
         },
-      },
-      orderBy: { session_date: "asc" },
-      select: {
-        session_date: true,
-        study_duration_minutes: true,
-        average_accuracy: true,
-      },
-    });
+        orderBy: { session_date: "asc" },
+        select: {
+          session_date: true,
+          study_duration_minutes: true,
+          average_accuracy: true,
+        },
+      });
+    } catch (error) {
+      if (isMissingTableError(error, "lrn_study_sessions")) {
+        return [];
+      }
+      throw error;
+    }
   },
 
   async findFlashcardSessionsByRange(userId, startUtc, endUtc) {

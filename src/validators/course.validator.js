@@ -179,6 +179,19 @@ const courseIdParamRules = [
     .isUUID().withMessage("Course ID must be a valid UUID"),
 ];
 
+const updateCourseProgressRules = [
+  param("courseId")
+    .isUUID().withMessage("Course ID must be a valid UUID"),
+  body("lessonId")
+    .isUUID().withMessage("lessonId must be a valid UUID"),
+  body("chapterId")
+    .optional()
+    .isUUID().withMessage("chapterId must be a valid UUID"),
+  body("completed")
+    .isBoolean().withMessage("completed must be a boolean")
+    .toBoolean(),
+];
+
 const createChapterRules = [
   param("courseId")
     .isUUID().withMessage("Course ID must be a valid UUID"),
@@ -380,6 +393,7 @@ module.exports = {
   updateCourseRules,
   deleteCourseRules,
   courseIdParamRules,
+  updateCourseProgressRules,
   createChapterRules,
   updateChapterRules,
   deleteChapterRules,

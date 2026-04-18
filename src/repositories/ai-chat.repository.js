@@ -1,4 +1,5 @@
 const prisma = require("../config/prisma");
+const { isMissingTableError } = require("../utils/prisma.util");
 
 const ACTIVE_PURCHASE_SELECT = {
   purchase_id: true,
@@ -59,36 +60,50 @@ const aiChatRepository = {
   },
 
   async findLearningStreak(userId) {
-    return prisma.lrn_learning_streaks.findUnique({
-      where: { user_id: userId },
-      select: {
-        current_streak_days: true,
-        total_study_days: true,
-        total_study_hours: true,
-      },
-    });
+    try {
+      return await prisma.lrn_learning_streaks.findUnique({
+        where: { user_id: userId },
+        select: {
+          current_streak_days: true,
+          total_study_days: true,
+          total_study_hours: true,
+        },
+      });
+    } catch (error) {
+      if (isMissingTableError(error, "lrn_learning_streaks")) {
+        return null;
+      }
+      throw error;
+    }
   },
 
   async findTodayStudySessions(userId, sessionDate) {
-    return prisma.lrn_study_sessions.findMany({
-      where: {
-        user_id: userId,
-        session_date: sessionDate,
-      },
-      orderBy: { session_start_utc: "asc" },
-      select: {
-        study_session_id: true,
-        study_duration_minutes: true,
-        activities_completed: true,
-        quiz_attempts: true,
-        flashcards_reviewed: true,
-        videos_watched: true,
-        documents_read: true,
-        average_accuracy: true,
-        session_start_utc: true,
-        session_end_utc: true,
-      },
-    });
+    try {
+      return await prisma.lrn_study_sessions.findMany({
+        where: {
+          user_id: userId,
+          session_date: sessionDate,
+        },
+        orderBy: { session_start_utc: "asc" },
+        select: {
+          study_session_id: true,
+          study_duration_minutes: true,
+          activities_completed: true,
+          quiz_attempts: true,
+          flashcards_reviewed: true,
+          videos_watched: true,
+          documents_read: true,
+          average_accuracy: true,
+          session_start_utc: true,
+          session_end_utc: true,
+        },
+      });
+    } catch (error) {
+      if (isMissingTableError(error, "lrn_study_sessions")) {
+        return [];
+      }
+      throw error;
+    }
   },
 
   async findTodayFlashcardSessions(userId, startUtc, endUtc) {

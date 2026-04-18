@@ -13,6 +13,7 @@ const {
   updateCourseRules,
   deleteCourseRules,
   courseIdParamRules,
+  updateCourseProgressRules,
   createChapterRules,
   updateChapterRules,
   deleteChapterRules,
@@ -219,6 +220,77 @@ router.post(
  *         description: Course not found
  */
 router.get("/:id", getCourseDetailRules, validate, courseController.getCourseDetail);
+
+/**
+ * @swagger
+ * /api/courses/{courseId}/progress:
+ *   get:
+ *     tags: [Course]
+ *     summary: Get learner progress for a course
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: courseId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Course progress retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: User is not enrolled in the course
+ *       404:
+ *         description: Course not found
+ *   put:
+ *     tags: [Course]
+ *     summary: Update learner progress for a lesson in a course
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: courseId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [lessonId, completed]
+ *             properties:
+ *               lessonId: { type: string, format: uuid }
+ *               chapterId: { type: string, format: uuid }
+ *               completed: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Course progress updated successfully
+ *       400:
+ *         description: Invalid payload or lesson does not belong to course
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: User is not enrolled in the course
+ *       404:
+ *         description: Course or lesson not found
+ */
+router.get(
+  "/:courseId/progress",
+  authenticate,
+  courseIdParamRules,
+  validate,
+  courseController.getCourseProgress
+);
+
+router.put(
+  "/:courseId/progress",
+  authenticate,
+  updateCourseProgressRules,
+  validate,
+  courseController.updateCourseProgress
+);
 
 /**
  * @swagger

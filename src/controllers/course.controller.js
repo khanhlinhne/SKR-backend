@@ -22,6 +22,28 @@ const courseController = {
     }
   },
 
+  async getCourseProgress(req, res, next) {
+    try {
+      const data = await courseService.getCourseProgress(req.params.courseId, req.user?.userId);
+      return success(res, { message: "Course progress retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async updateCourseProgress(req, res, next) {
+    try {
+      const data = await courseService.updateCourseProgress(
+        req.params.courseId,
+        req.user?.userId,
+        req.body
+      );
+      return success(res, { message: "Course progress updated successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async createCourse(req, res, next) {
     try {
       const data = await courseService.createCourse(req.user?.userId, req.body);
