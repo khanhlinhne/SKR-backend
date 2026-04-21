@@ -608,6 +608,33 @@ model lrn_video_progress {
   @@index([video_id], map: "idx_video_progress_video")
 }
 
+model lrn_subject_lesson_progress {
+  progress_id          String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  purchase_id          String               @db.Uuid
+  course_id            String               @map("subject_id") @db.Uuid
+  user_id              String               @db.Uuid
+  chapter_id           String?              @db.Uuid
+  lesson_id            String               @db.Uuid
+  completed            Boolean              @default(false)
+  completed_at_utc     DateTime?            @db.Timestamp(6)
+  created_by           String               @db.Uuid
+  created_at_utc       DateTime             @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by           String?              @db.Uuid
+  updated_at_utc       DateTime?            @db.Timestamp(6)
+  status               String?              @default("active") @db.VarChar(50)
+  pmt_course_purchases pmt_course_purchases @relation(fields: [purchase_id], references: [purchase_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lesson_progress_purchase")
+  mst_courses          mst_courses          @relation(fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lesson_progress_subject")
+  mst_users            mst_users            @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lesson_progress_user")
+  mst_chapters         mst_chapters?        @relation(fields: [chapter_id], references: [chapter_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_lesson_progress_chapter")
+  mst_lessons          mst_lessons          @relation(fields: [lesson_id], references: [lesson_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lesson_progress_lesson")
+
+  @@unique([purchase_id, lesson_id])
+  @@index([purchase_id], map: "idx_lesson_progress_purchase")
+  @@index([course_id, user_id], map: "idx_lesson_progress_subject_user")
+  @@index([lesson_id], map: "idx_lesson_progress_lesson")
+  @@index([chapter_id], map: "idx_lesson_progress_chapter")
+}
+
 model mst_chapters {
   chapter_id                 String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   course_id                  String       @map("subject_id") @db.Uuid
@@ -623,6 +650,7 @@ model mst_chapters {
   updated_at_utc             DateTime?    @db.Timestamp(6)
   is_active                  Boolean?     @default(true)
   mst_courses                mst_courses  @relation(fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_chapters_subject")
+  lrn_subject_lesson_progress lrn_subject_lesson_progress[]
   mst_lessons                mst_lessons[]
 
   @@unique([course_id, chapter_code])
@@ -651,6 +679,7 @@ model mst_lessons {
   cnt_flashcards             cnt_flashcards[]
   cnt_questions              cnt_questions[]
   cnt_videos                 cnt_videos[]
+  lrn_subject_lesson_progress lrn_subject_lesson_progress[]
   mst_chapters               mst_chapters     @relation(fields: [chapter_id], references: [chapter_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lessons_chapter")
 
   @@unique([chapter_id, lesson_code])
@@ -715,6 +744,7 @@ model mst_courses {
   cnt_question_banks       cnt_question_banks[]
   cnt_questions            cnt_questions[]
   cnt_videos               cnt_videos[]
+  lrn_subject_lesson_progress lrn_subject_lesson_progress[]
   mst_chapters             mst_chapters[]
   mst_users                mst_users?                @relation(fields: [creator_id], references: [user_id], onUpdate: NoAction, map: "fk_subjects_creator")
   mst_package_courses      mst_package_courses[]
@@ -822,6 +852,7 @@ model mst_users {
   lrn_flashcard_reviews                                                  lrn_flashcard_reviews[]
   lrn_flashcard_sessions                                                 lrn_flashcard_sessions[]
   lrn_learning_streaks                                                   lrn_learning_streaks?
+  lrn_subject_lesson_progress                                            lrn_subject_lesson_progress[]
   lrn_practice_tests                                                     lrn_practice_tests[]
   lrn_quiz_answers                                                       lrn_quiz_answers[]
   lrn_quiz_attempts                                                      lrn_quiz_attempts[]
@@ -993,6 +1024,7 @@ model pmt_course_purchases {
   updated_by                String?      @db.Uuid
   updated_at_utc            DateTime?    @db.Timestamp(6)
   status                    String?      @default("active") @db.VarChar(50)
+  lrn_subject_lesson_progress lrn_subject_lesson_progress[]
   pmt_orders                pmt_orders?  @relation(fields: [order_id], references: [order_id], onUpdate: NoAction, map: "fk_subject_purchases_order")
   mst_courses               mst_courses  @relation(fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_subject_purchases_subject")
   mst_users                 mst_users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_subject_purchases_user")

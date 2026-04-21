@@ -22,6 +22,15 @@ const courseController = {
     }
   },
 
+  async getCourseProgress(req, res, next) {
+    try {
+      const data = await courseService.getCourseProgress(req.params.courseId, req.user?.userId);
+      return success(res, { message: "Course progress retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async createCourse(req, res, next) {
     try {
       const data = await courseService.createCourse(req.user?.userId, req.body);
@@ -160,6 +169,33 @@ const courseController = {
         req.params.lessonId
       );
       return success(res, { message: "Lesson content retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getLessonAssignment(req, res, next) {
+    try {
+      const data = await courseService.getLessonAssignment(
+        req.params.courseId,
+        req.params.chapterId,
+        req.params.lessonId
+      );
+      return success(res, { message: "Lesson assignment retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getMyLessonAssignmentSubmission(req, res, next) {
+    try {
+      const data = await courseService.getMyLessonAssignmentSubmission(
+        req.params.courseId,
+        req.params.chapterId,
+        req.params.lessonId,
+        req.user?.userId
+      );
+      return success(res, { message: "Assignment submission retrieved successfully", data });
     } catch (err) {
       next(err);
     }

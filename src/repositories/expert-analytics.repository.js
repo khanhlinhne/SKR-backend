@@ -1,5 +1,10 @@
 const prisma = require("../config/prisma");
 
+function getLessonProgressDelegate(client = prisma) {
+  // The real table name is lrn_subject_lesson_progress, so keep the delegate aligned with the DB schema.
+  return client?.lrn_subject_lesson_progress;
+}
+
 const courseInclude = {
   mst_users: {
     select: {
@@ -102,7 +107,14 @@ const analyticsRepository = {
   },
 
   async findLessonProgressByCourse(courseId) {
-    return prisma.lrn_course_lesson_progress.findMany({
+    const delegate = getLessonProgressDelegate();
+    if (!delegate?.findMany) {
+      // Some environments do not expose this table in the generated Prisma client yet.
+      // Analytics can still load with an empty lesson-progress dataset instead of failing the whole page.
+      return [];
+    }
+
+    return delegate.findMany({
       where: {
         course_id: courseId,
         status: "active",

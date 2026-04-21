@@ -1,6 +1,7 @@
 const path = require("path");
 const AppError = require("../utils/AppError");
 const courseRepository = require("../repositories/course.repository");
+const courseProgressRepository = require("../repositories/course-progress.repository");
 const userRepository = require("../repositories/user.repository");
 const courseDto = require("../dtos/course.dto");
 
@@ -89,6 +90,25 @@ function getFileTypeFromName(fileName) {
   return extension || undefined;
 }
 
+function toSafeNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function ensureActiveLessonInCourse(course, chapterId, lessonId) {
+  const chapter = (course?.mst_chapters || []).find((item) => item.chapter_id === chapterId);
+  if (!chapter || chapter.is_active === false) {
+    throw AppError.notFound("Chapter not found in this course");
+  }
+
+  const lesson = (chapter.mst_lessons || []).find((item) => item.lesson_id === lessonId);
+  if (!lesson || lesson.is_active === false) {
+    throw AppError.notFound("Lesson not found in this chapter");
+  }
+
+  return lesson;
+}
+
 const courseService = {
   // ──────────────── COURSES ────────────────
 
@@ -163,6 +183,41 @@ const courseService = {
     }
 
     return courseDto.toDetail(course);
+  },
+
+  async getCourseProgress(courseId, userId) {
+    if (!userId) {
+      throw AppError.unauthorized("Authentication required to view course progress.");
+    }
+
+    const [course, purchase] = await Promise.all([
+      courseRepository.findByIdWithStructure(courseId),
+      courseProgressRepository.findPurchaseByUserAndCourse(userId, courseId),
+    ]);
+
+    if (!course || !course.is_active) {
+      throw AppError.notFound("Course not found");
+    }
+
+    const totalChapters = toSafeNumber(course.total_chapters ?? course.mst_chapters?.length);
+    const totalLessons = toSafeNumber(course.total_lessons);
+    const completedLessons = toSafeNumber(purchase?.lessons_completed);
+    const completedChapters = toSafeNumber(purchase?.chapters_completed);
+    const progressPercent = toSafeNumber(purchase?.progress_percent);
+
+    return {
+      courseId,
+      isEnrolled: Boolean(purchase),
+      status: purchase?.status ?? "not_started",
+      progressPercent,
+      completedLessons,
+      totalLessons,
+      completedChapters,
+      totalChapters,
+      lastAccessedAt: purchase?.last_accessed_at_utc ?? null,
+      completedAt: purchase?.completed_at_utc ?? null,
+      lessonProgressById: {},
+    };
   },
 
   async createCourse(userId, body) {
@@ -541,6 +596,63 @@ const courseService = {
     }
 
     return courseDto.toLessonDetail(lesson);
+  },
+
+  async getLessonAssignment(courseId, chapterId, lessonId) {
+    const course = await courseRepository.findByIdWithStructure(courseId);
+    if (!course || !course.is_active) {
+      throw AppError.notFound("Course not found");
+    }
+
+    ensureActiveLessonInCourse(course, chapterId, lessonId);
+
+    const lesson = await courseRepository.findLessonByIdWithContent(lessonId);
+    if (!lesson || lesson.chapter_id !== chapterId || lesson.is_active === false) {
+      throw AppError.notFound("Lesson not found in this chapter");
+    }
+
+    const lessonDetail = courseDto.toLessonDetail(lesson);
+
+    return {
+      assignmentId: lessonDetail.lessonId,
+      lessonId: lessonDetail.lessonId,
+      title: lessonDetail.lessonName,
+      description: lessonDetail.lessonDescription,
+      instructions: lessonDetail.learningObjectives,
+      lessonType: lessonDetail.lessonType,
+      available: lessonDetail.hasAssignment,
+      documents: lessonDetail.documents,
+      questions: lessonDetail.questions,
+      flashcardSets: lessonDetail.flashcardSets,
+    };
+  },
+
+  async getMyLessonAssignmentSubmission(courseId, chapterId, lessonId, userId) {
+    if (!userId) {
+      throw AppError.unauthorized("Authentication required to view assignment submission.");
+    }
+
+    const course = await courseRepository.findByIdWithStructure(courseId);
+    if (!course || !course.is_active) {
+      throw AppError.notFound("Course not found");
+    }
+
+    ensureActiveLessonInCourse(course, chapterId, lessonId);
+
+    const lesson = await courseRepository.findLessonByIdWithContent(lessonId);
+    if (!lesson || lesson.chapter_id !== chapterId || lesson.is_active === false) {
+      throw AppError.notFound("Lesson not found in this chapter");
+    }
+
+    const lessonDetail = courseDto.toLessonDetail(lesson);
+
+    return {
+      assignmentId: lessonId,
+      lessonId,
+      status: "not_submitted",
+      submission: null,
+      available: lessonDetail.hasAssignment,
+    };
   },
 
   async addVideo(courseId, chapterId, lessonId, userId, body) {

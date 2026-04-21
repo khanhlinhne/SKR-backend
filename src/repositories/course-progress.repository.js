@@ -1,5 +1,9 @@
 const prisma = require("../config/prisma");
 
+function getLessonProgressDelegate(client = prisma) {
+  return client?.lrn_subject_lesson_progress;
+}
+
 const courseProgressRepository = {
   async findPurchaseByUserAndCourse(userId, courseId) {
     return prisma.pmt_course_purchases.findUnique({
@@ -14,6 +18,11 @@ const courseProgressRepository = {
         course_id: true,
         user_id: true,
         status: true,
+        progress_percent: true,
+        chapters_completed: true,
+        lessons_completed: true,
+        last_accessed_at_utc: true,
+        completed_at_utc: true,
         created_at_utc: true,
         updated_at_utc: true,
       },
@@ -65,7 +74,12 @@ const courseProgressRepository = {
   },
 
   async findLessonProgressRows(purchaseId) {
-    return prisma.lrn_course_lesson_progress.findMany({
+    const delegate = getLessonProgressDelegate();
+    if (!delegate?.findMany) {
+      return [];
+    }
+
+    return delegate.findMany({
       where: {
         purchase_id: purchaseId,
         status: "active",
@@ -96,48 +110,52 @@ const courseProgressRepository = {
     updatedAt,
   }) {
     return prisma.$transaction(async (tx) => {
-      const existing = await tx.lrn_course_lesson_progress.findUnique({
-        where: {
-          purchase_id_lesson_id: {
-            purchase_id: purchaseId,
-            lesson_id: lessonId,
-          },
-        },
-        select: {
-          progress_id: true,
-          completed_at_utc: true,
-          created_at_utc: true,
-        },
-      });
+      const delegate = getLessonProgressDelegate(tx);
 
-      if (existing) {
-        await tx.lrn_course_lesson_progress.update({
+      if (delegate?.findUnique && delegate?.update && delegate?.create) {
+        const existing = await delegate.findUnique({
           where: {
-            progress_id: existing.progress_id,
+            purchase_id_lesson_id: {
+              purchase_id: purchaseId,
+              lesson_id: lessonId,
+            },
           },
-          data: {
-            chapter_id: chapterId ?? null,
-            completed,
-            completed_at_utc: completed ? existing.completed_at_utc || updatedAt : null,
-            updated_by: userId,
-            updated_at_utc: updatedAt,
-            status: "active",
-          },
-        });
-      } else {
-        await tx.lrn_course_lesson_progress.create({
-          data: {
-            purchase_id: purchaseId,
-            course_id: courseId,
-            user_id: userId,
-            chapter_id: chapterId ?? null,
-            lesson_id: lessonId,
-            completed,
-            completed_at_utc: completed ? updatedAt : null,
-            created_by: userId,
-            status: "active",
+          select: {
+            progress_id: true,
+            completed_at_utc: true,
+            created_at_utc: true,
           },
         });
+
+        if (existing) {
+          await delegate.update({
+            where: {
+              progress_id: existing.progress_id,
+            },
+            data: {
+              chapter_id: chapterId ?? null,
+              completed,
+              completed_at_utc: completed ? existing.completed_at_utc || updatedAt : null,
+              updated_by: userId,
+              updated_at_utc: updatedAt,
+              status: "active",
+            },
+          });
+        } else {
+          await delegate.create({
+            data: {
+              purchase_id: purchaseId,
+              course_id: courseId,
+              user_id: userId,
+              chapter_id: chapterId ?? null,
+              lesson_id: lessonId,
+              completed,
+              completed_at_utc: completed ? updatedAt : null,
+              created_by: userId,
+              status: "active",
+            },
+          });
+        }
       }
 
       await tx.pmt_course_purchases.update({

@@ -218,6 +218,13 @@ router.post(
  *         description: Course not found
  */
 router.get("/:id", getCourseDetailRules, validate, courseController.getCourseDetail);
+router.get(
+  "/:courseId/progress",
+  authenticate,
+  courseIdParamRules,
+  validate,
+  courseController.getCourseProgress
+);
 
 /**
  * @swagger
@@ -712,6 +719,21 @@ router.delete(
 router.get(
   "/:courseId/chapters/:chapterId/lessons/:lessonId/content",
   courseController.getLessonContent
+);
+
+router.get(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/assignment",
+  deleteLessonRules,
+  validate,
+  courseController.getLessonAssignment
+);
+
+router.get(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/assignment/submissions/me",
+  authenticate,
+  deleteLessonRules,
+  validate,
+  courseController.getMyLessonAssignmentSubmission
 );
 
 // ── Videos ──
