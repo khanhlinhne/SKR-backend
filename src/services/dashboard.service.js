@@ -338,6 +338,58 @@ function resolveCustomerName(order) {
   );
 }
 
+function getOrderItemNames(order) {
+  return (order?.pmt_order_items || [])
+    .map((item) => item.item_name)
+    .filter(Boolean);
+}
+
+function getOrderDisplayCode(orderId, orderCode) {
+  if (orderCode) return `#${orderCode}`;
+  if (orderId) return `#${String(orderId).slice(0, 8)}`;
+  return null;
+}
+
+function buildPaymentItemText({ orderId, orderCode, itemNames, customerName, customerEmail }) {
+  const displayCode = getOrderDisplayCode(orderId, orderCode);
+  const itemName = itemNames?.[0] || null;
+  const buyer = customerName || customerEmail || null;
+  const parts = [displayCode, itemName || buyer].filter(Boolean);
+  return parts.length ? parts.join(" - ") : null;
+}
+
+function buildContentLocation(item) {
+  return [item.courseName, item.chapterName, item.lessonName].filter(Boolean).join(" - ") || null;
+}
+
+function decorateFlashcardItem(row) {
+  const reviewCount = Number(row.reviewCount || 0);
+  const studySessionCount = Number(row.studySessionCount || 0);
+  const timesStudied = Number(row.timesStudied || 0);
+  const metricValue = Math.max(timesStudied, studySessionCount, reviewCount);
+  const fallbackName = row.setTitle || row.lessonName || row.courseName || `Flashcard ${String(row.flashcardSetId || "").slice(0, 8)}`;
+  const locationLabel = buildContentLocation({
+    ...row,
+    courseName: row.courseName || null,
+  });
+
+  return {
+    ...row,
+    originalCourseName: row.courseName || null,
+    courseName: row.courseName || fallbackName,
+    name: fallbackName,
+    title: fallbackName,
+    displayName: fallbackName,
+    primaryText: fallbackName,
+    subtitle: locationLabel,
+    secondaryText: locationLabel,
+    locationLabel,
+    metricValue,
+    metricLabel: reviewCount > 0 ? "reviews" : studySessionCount > 0 ? "study sessions" : "studies",
+    count: metricValue,
+  };
+}
+
 function mapRecentOrder(order) {
   const firstItem = order.pmt_order_items?.[0];
   const status = mapOrderStatus(order.payment_status);
@@ -365,7 +417,332 @@ function mapRecentOrder(order) {
   };
 }
 
-function buildUiPayload(period, summaryCards, revenueByMonth, featuredCourses, recentUsers, recentOrders) {
+function getMissingContentTypes(course) {
+  const missing = [];
+  if (!Number(course.videoCount || 0)) missing.push("videos");
+  if (!Number(course.documentCount || 0)) missing.push("documents");
+  if (!Number(course.questionCount || 0)) missing.push("questions");
+  return missing;
+}
+
+function buildCourseSystemHealth(statusSummary, courseRows, take = 8) {
+  const courses = (courseRows || []).map((course) => ({
+    ...course,
+    missingContentTypes: getMissingContentTypes(course),
+  }));
+
+  return {
+    summary: {
+      total: Number(statusSummary.total || 0),
+      published: Number(statusSummary.published || 0),
+      draft: Number(statusSummary.draft || 0),
+      inactive: Number(statusSummary.inactive || 0),
+    },
+    missingContentCourses: courses.filter((course) => course.missingContentTypes.length > 0).slice(0, take),
+    noStudentCourses: courses.filter((course) => Number(course.studentCount || 0) === 0).slice(0, take),
+    lowRatedCourses: courses
+      .filter((course) => Number(course.ratingCount || 0) > 0 && Number(course.ratingAverage || 0) < 4)
+      .sort((left, right) => Number(left.ratingAverage || 0) - Number(right.ratingAverage || 0))
+      .slice(0, take),
+    lowCompletionCourses: courses
+      .filter((course) => Number(course.enrollmentCount || 0) > 0 && Number(course.completionRate || 0) < 30)
+      .sort((left, right) => Number(left.completionRate || 0) - Number(right.completionRate || 0))
+      .slice(0, take),
+    mostEnrolledCourses: [...courses]
+      .sort((left, right) => Number(right.studentCount || 0) - Number(left.studentCount || 0))
+      .slice(0, take),
+    topRatedCourses: courses
+      .filter((course) => Number(course.ratingCount || 0) > 0 && Number(course.ratingAverage || 0) > 4)
+      .sort((left, right) => Number(right.ratingAverage || 0) - Number(left.ratingAverage || 0))
+      .slice(0, take),
+    recentlyUpdatedCourses: [...courses]
+      .sort((left, right) => new Date(right.lastUpdatedAt || 0).getTime() - new Date(left.lastUpdatedAt || 0).getTime())
+      .slice(0, take),
+  };
+}
+
+function buildContentQuality(contentStatsRows, lowCompletionVideos, topDocuments, topFlashcards, mostMissedQuestions, typeRows, difficultyRows) {
+  const byType = new Map((contentStatsRows || []).map((row) => [row.type, row]));
+  const getRow = (type) => byType.get(type) || { total: 0, newInPeriod: 0, pending: 0 };
+  const videos = getRow("videos");
+  const documents = getRow("documents");
+  const questions = getRow("questions");
+  const flashcards = getRow("flashcards");
+
+  return {
+    totals: {
+      videos: Number(videos.total || 0),
+      documents: Number(documents.total || 0),
+      questions: Number(questions.total || 0),
+      flashcards: Number(flashcards.total || 0),
+      total:
+        Number(videos.total || 0) +
+        Number(documents.total || 0) +
+        Number(questions.total || 0) +
+        Number(flashcards.total || 0),
+    },
+    pending: {
+      videos: Number(videos.pending || 0),
+      documents: Number(documents.pending || 0),
+      questions: Number(questions.pending || 0),
+      flashcards: Number(flashcards.pending || 0),
+      total:
+        Number(videos.pending || 0) +
+        Number(documents.pending || 0) +
+        Number(questions.pending || 0) +
+        Number(flashcards.pending || 0),
+    },
+    newInPeriod: {
+      videos: Number(videos.newInPeriod || 0),
+      documents: Number(documents.newInPeriod || 0),
+      questions: Number(questions.newInPeriod || 0),
+      flashcards: Number(flashcards.newInPeriod || 0),
+      total:
+        Number(videos.newInPeriod || 0) +
+        Number(documents.newInPeriod || 0) +
+        Number(questions.newInPeriod || 0) +
+        Number(flashcards.newInPeriod || 0),
+    },
+    lowCompletionVideos: lowCompletionVideos || [],
+    topDocuments: topDocuments || [],
+    topFlashcards: (topFlashcards || []).map(decorateFlashcardItem),
+    highIncorrectQuestions: mostMissedQuestions || [],
+    questionTypeBreakdown: typeRows || [],
+    questionDifficultyBreakdown: difficultyRows || [],
+  };
+}
+
+function buildProgressDistribution(rows, totalEnrollments) {
+  const labels = {
+    notStarted: "0%",
+    p1_25: "1-25%",
+    p26_50: "26-50%",
+    p51_75: "51-75%",
+    p76_99: "76-99%",
+    completed: "100%",
+  };
+  const order = ["notStarted", "p1_25", "p26_50", "p51_75", "p76_99", "completed"];
+  const byKey = new Map((rows || []).map((row) => [row.key, Number(row.count || 0)]));
+
+  return order.map((key) => {
+    const count = byKey.get(key) || 0;
+    return {
+      key,
+      label: labels[key],
+      count,
+      percent: totalEnrollments ? round1((count / totalEnrollments) * 100) : 0,
+    };
+  });
+}
+
+function buildLearningActivity(summary, progressRows, lessonVideoRows) {
+  const totalEnrollments = Number(summary.totalEnrollments || 0);
+  const completedLessonCount = Number(lessonVideoRows?.totals?.completedLessonCount || 0);
+  const totalVideoWatchSeconds = Number(lessonVideoRows?.totals?.totalVideoWatchSeconds || 0);
+
+  return {
+    totalEnrollments,
+    uniqueLearners: Number(summary.uniqueLearners || 0),
+    activeLearners: Number(summary.activeEnrollments || 0),
+    completedLearners: Number(summary.completedEnrollments || 0),
+    averageProgress: summary.averageProgress == null ? 0 : round1(summary.averageProgress),
+    progressDistribution: buildProgressDistribution(progressRows, totalEnrollments),
+    completedLessonCount,
+    totalVideoWatchSeconds,
+    totalVideoWatchMinutes: round1(totalVideoWatchSeconds / 60),
+    topLessons: lessonVideoRows?.topLessons || [],
+    topVideos: lessonVideoRows?.topVideos || [],
+    dropOffPoints: lessonVideoRows?.dropOffPoints || [],
+  };
+}
+
+function buildPaymentOperations(raw) {
+  const statusCounts = {
+    completed: 0,
+    pending: 0,
+    failed: 0,
+    cancelled: 0,
+    refunded: 0,
+    processing: 0,
+    total: 0,
+  };
+
+  for (const row of raw.statusRows || []) {
+    const key = row.status || "pending";
+    statusCounts[key] = Number(row.count || 0);
+    statusCounts.total += Number(row.count || 0);
+  }
+
+  const successRate = statusCounts.total ? round1((statusCounts.completed / statusCounts.total) * 100) : 0;
+
+  return {
+    statusCounts,
+    successRate,
+    revenueInPeriod: Math.round(Number(raw.revenue?.revenueInPeriod || 0)),
+    revenueInPeriodDisplay: formatCurrencyVnd(raw.revenue?.revenueInPeriod || 0),
+    discountInPeriod: Math.round(Number(raw.revenue?.discountInPeriod || 0)),
+    refundAmount: Math.round(Number(raw.revenue?.refundAmount || 0)),
+    failedTransactions: (raw.failedTransactions || []).map((transaction) => {
+      const order = transaction.pmt_orders;
+      const itemNames = getOrderItemNames(order);
+      const customerName = order?.customer_name || null;
+      const customerEmail = order?.customer_email || null;
+      const primaryText =
+        buildPaymentItemText({
+          orderId: transaction.order_id,
+          orderCode: order?.order_code,
+          itemNames,
+          customerName,
+          customerEmail,
+        }) || `Giao dịch ${String(transaction.transaction_id).slice(0, 8)}`;
+      const secondaryText = [transaction.payment_method, transaction.bank_code, customerEmail].filter(Boolean).join(" - ") || null;
+
+      return {
+        transactionId: transaction.transaction_id,
+        transactionCode: transaction.sepay_order_code || transaction.sepay_transaction_id || null,
+        transactionType: transaction.transaction_type || null,
+        orderId: transaction.order_id,
+        orderCode: order?.order_code || null,
+        orderDisplayCode: getOrderDisplayCode(transaction.order_id, order?.order_code),
+        name: primaryText,
+        title: primaryText,
+        displayName: primaryText,
+        primaryText,
+        secondaryText,
+        itemName: itemNames[0] || null,
+        itemNames,
+        customerName,
+        customerEmail,
+        amount: Number(transaction.amount || 0),
+        amountDisplay: formatCurrencyVnd(transaction.amount || 0),
+        currencyCode: transaction.currency_code || "VND",
+        paymentMethod: transaction.payment_method || null,
+        bankCode: transaction.bank_code || null,
+        failureReason: transaction.failure_reason || null,
+        failedAtUtc: transaction.failed_at_utc,
+        createdAtUtc: transaction.created_at_utc,
+      };
+    }),
+    stalePendingOrders: (raw.stalePendingOrders || []).map((order) => {
+      const itemNames = getOrderItemNames(order);
+      const primaryText =
+        buildPaymentItemText({
+          orderId: order.order_id,
+          orderCode: order.order_code,
+          itemNames,
+          customerName: order.customer_name,
+          customerEmail: order.customer_email,
+        }) || `Đơn hàng ${String(order.order_id).slice(0, 8)}`;
+      const secondaryText = [order.customer_name, order.customer_email].filter(Boolean).join(" - ") || null;
+
+      return {
+        orderId: order.order_id,
+        orderCode: order.order_code,
+        orderDisplayCode: getOrderDisplayCode(order.order_id, order.order_code),
+        name: primaryText,
+        title: primaryText,
+        displayName: primaryText,
+        primaryText,
+        secondaryText,
+        itemName: itemNames[0] || null,
+        itemNames,
+        customerName: order.customer_name || null,
+        customerEmail: order.customer_email || null,
+        amount: Number(order.total_amount || 0),
+        amountDisplay: formatCurrencyVnd(order.total_amount || 0),
+        currencyCode: order.currency_code || "VND",
+        createdAtUtc: order.created_at_utc,
+        ageHours: order.created_at_utc
+          ? Math.floor((Date.now() - new Date(order.created_at_utc).getTime()) / 3_600_000)
+          : null,
+      };
+    }),
+    paymentMethods: raw.paymentMethods || [],
+    topCoupons: raw.topCoupons || [],
+  };
+}
+
+function buildCreatorPerformance(raw) {
+  const missingContentByCreator = new Map();
+  for (const row of raw.missingContentRows || []) {
+    const course = {
+      courseId: row.courseId,
+      courseCode: row.courseCode,
+      courseName: row.courseName,
+      name: row.courseName,
+      title: row.courseName,
+      displayName: row.courseName,
+      videoCount: Number(row.videoCount || 0),
+      documentCount: Number(row.documentCount || 0),
+      questionCount: Number(row.questionCount || 0),
+      missingContentTypes: getMissingContentTypes(row),
+    };
+    const items = missingContentByCreator.get(row.creatorId) || [];
+    items.push(course);
+    missingContentByCreator.set(row.creatorId, items);
+  }
+
+  const creators = (raw.creators || []).map((creator) => ({
+    ...creator,
+    missingContentSubjects: missingContentByCreator.get(creator.creatorId) || [],
+    missingContentCoursesDetail: missingContentByCreator.get(creator.creatorId) || [],
+    missingContentCourseNames: (missingContentByCreator.get(creator.creatorId) || []).map((course) => course.courseName),
+  }));
+  const byPublished = [...creators].sort((left, right) => Number(right.publishedCourses || 0) - Number(left.publishedCourses || 0));
+  const byStudents = [...creators].sort((left, right) => Number(right.studentCount || 0) - Number(left.studentCount || 0));
+  const rated = creators.filter((creator) => Number(creator.ratingCount || 0) > 0);
+  const highlyRated = rated.filter((creator) => Number(creator.averageRating || 0) > 4);
+  const lowRated = rated.filter((creator) => Number(creator.averageRating || 0) < 4);
+
+  return {
+    totalCreators: Number(raw.summary?.totalCreators || 0),
+    topPublishedCreators: byPublished.slice(0, raw.take || 8),
+    topStudentCreators: byStudents.slice(0, raw.take || 8),
+    highestRatedCreators: [...highlyRated]
+      .sort((left, right) => Number(right.averageRating || 0) - Number(left.averageRating || 0))
+      .slice(0, raw.take || 8),
+    lowestRatedCreators: [...lowRated]
+      .sort((left, right) => Number(left.averageRating || 0) - Number(right.averageRating || 0))
+      .slice(0, raw.take || 8),
+    creatorsWithDraftOrInactiveCourses: creators
+      .filter((creator) => Number(creator.draftCourses || 0) > 0 || Number(creator.inactiveCourses || 0) > 0)
+      .sort(
+        (left, right) =>
+          Number(right.draftCourses || 0) +
+          Number(right.inactiveCourses || 0) -
+          Number(left.draftCourses || 0) -
+          Number(left.inactiveCourses || 0)
+      )
+      .slice(0, raw.take || 8),
+    creatorsWithMissingContent: creators
+      .filter((creator) => Number(creator.missingContentCourses || 0) > 0)
+      .sort((left, right) => Number(right.missingContentCourses || 0) - Number(left.missingContentCourses || 0))
+      .slice(0, raw.take || 8),
+  };
+}
+
+function buildQuizQuality(raw) {
+  return {
+    totalAttempts: Number(raw.stats?.totalAttempts || 0),
+    averageScore: raw.stats?.averageScore == null ? null : round1(raw.stats.averageScore),
+    passedAttempts: Number(raw.stats?.passedAttempts || 0),
+    passRate: raw.stats?.passRate == null ? 0 : round1(raw.stats.passRate),
+    mostMissedQuestions: raw.mostMissedQuestions || [],
+    unusedQuestions: raw.unusedQuestions || [],
+    questionTypeBreakdown: raw.questionTypeBreakdown || [],
+    questionDifficultyBreakdown: raw.difficultyBreakdown || [],
+  };
+}
+
+function buildUiPayload(
+  period,
+  summaryCards,
+  revenueByMonth,
+  featuredCourses,
+  recentUsers,
+  recentOrders,
+  adminBlocks = {}
+) {
   return {
     page: {
       sectionTitle: "Dashboard",
@@ -392,6 +769,7 @@ function buildUiPayload(period, summaryCards, revenueByMonth, featuredCourses, r
     },
     recentUsers: {
       title: "Ng\u01b0\u1eddi d\u00f9ng M\u1edbi",
+      deprecated: true,
       actionLabel: "Xem t\u1ea5t c\u1ea3",
       columns: [
         { key: "user", label: "Ng\u01b0\u1eddi d\u00f9ng" },
@@ -412,6 +790,12 @@ function buildUiPayload(period, summaryCards, revenueByMonth, featuredCourses, r
       ],
       items: recentOrders,
     },
+    courseSystemHealth: adminBlocks.courseSystemHealth,
+    contentQuality: adminBlocks.contentQuality,
+    learningActivity: adminBlocks.learningActivity,
+    paymentOperations: adminBlocks.paymentOperations,
+    creatorPerformance: adminBlocks.creatorPerformance,
+    quizQuality: adminBlocks.quizQuality,
   };
 }
 
@@ -436,6 +820,21 @@ const dashboardService = {
       topRaw,
       recentUsersRaw,
       recentOrdersRaw,
+      adminCourseStatusSummary,
+      adminCourseHealthRows,
+      adminContentStatsRows,
+      adminLowCompletionVideos,
+      adminTopDocuments,
+      adminTopFlashcards,
+      adminMostMissedQuestions,
+      adminQuestionTypeRows,
+      adminQuestionDifficultyRows,
+      adminLearningSummary,
+      adminProgressDistribution,
+      adminLessonVideoRows,
+      adminPaymentOperationsRaw,
+      adminCreatorPerformanceRaw,
+      adminQuizQualityRaw,
     ] = await Promise.all([
       dashboardRepository.countUsers({}),
       dashboardRepository.countCourses({ status: "published", is_active: true }),
@@ -475,6 +874,21 @@ const dashboardService = {
       dashboardRepository.getTopCoursesByPurchaseRevenue(4),
       dashboardRepository.findRecentUsers(10),
       dashboardRepository.findRecentOrders(10),
+      dashboardRepository.getAdminCourseStatusSummary(),
+      dashboardRepository.getAdminCourseHealthRows(),
+      dashboardRepository.getAdminContentStats(currentStart, currentEnd),
+      dashboardRepository.findAdminLowCompletionVideos(8),
+      dashboardRepository.findAdminTopDocuments(8),
+      dashboardRepository.findAdminTopFlashcards(8),
+      dashboardRepository.findAdminMostMissedQuestions(8),
+      dashboardRepository.getAdminQuestionTypeBreakdown(),
+      dashboardRepository.getAdminQuestionDifficultyBreakdown(),
+      dashboardRepository.getAdminLearningSummary(),
+      dashboardRepository.getAdminProgressDistribution(),
+      dashboardRepository.getAdminLessonVideoLearningRows(8),
+      dashboardRepository.getAdminPaymentOperations(currentStart, currentEnd),
+      dashboardRepository.getAdminCreatorPerformance(8),
+      dashboardRepository.getAdminQuizQuality(8),
     ]);
 
     const revenueCurrent = Math.round(num(revenueCurr));
@@ -568,6 +982,32 @@ const dashboardService = {
     const featuredCourses = await mapFeaturedWithGrowth(topRaw);
     const recentUsers = recentUsersRaw.map(mapRecentUser);
     const recentOrders = recentOrdersRaw.map(mapRecentOrder);
+    const courseSystemHealth = buildCourseSystemHealth(adminCourseStatusSummary, adminCourseHealthRows, 8);
+    const contentQuality = buildContentQuality(
+      adminContentStatsRows,
+      adminLowCompletionVideos,
+      adminTopDocuments,
+      adminTopFlashcards,
+      adminMostMissedQuestions,
+      adminQuestionTypeRows,
+      adminQuestionDifficultyRows
+    );
+    const learningActivity = buildLearningActivity(
+      adminLearningSummary,
+      adminProgressDistribution,
+      adminLessonVideoRows
+    );
+    const paymentOperations = buildPaymentOperations(adminPaymentOperationsRaw);
+    const creatorPerformance = buildCreatorPerformance(adminCreatorPerformanceRaw);
+    const quizQuality = buildQuizQuality(adminQuizQualityRaw);
+    const adminBlocks = {
+      courseSystemHealth,
+      contentQuality,
+      learningActivity,
+      paymentOperations,
+      creatorPerformance,
+      quizQuality,
+    };
 
     return {
       period: currentPeriod,
@@ -587,7 +1027,21 @@ const dashboardService = {
       featuredCourses,
       recentUsers,
       recentOrders,
-      ui: buildUiPayload(currentPeriod, summaryCards, revenueByMonth, featuredCourses, recentUsers, recentOrders),
+      courseSystemHealth,
+      contentQuality,
+      learningActivity,
+      paymentOperations,
+      creatorPerformance,
+      quizQuality,
+      ui: buildUiPayload(
+        currentPeriod,
+        summaryCards,
+        revenueByMonth,
+        featuredCourses,
+        recentUsers,
+        recentOrders,
+        adminBlocks
+      ),
     };
   },
 };

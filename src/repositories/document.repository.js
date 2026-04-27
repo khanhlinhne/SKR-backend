@@ -37,6 +37,17 @@ const documentRepository = {
     });
   },
 
+  async incrementViewCount(documentId, userId) {
+    return prisma.cnt_documents.update({
+      where: { document_id: documentId },
+      data: {
+        view_count: { increment: 1 },
+        updated_by: userId,
+        updated_at_utc: new Date(),
+      },
+    });
+  },
+
   async findManyByUploader(uploaderId, { skip, take, where = {} }) {
     const baseWhere = { uploader_id: uploaderId, ...where };
     const [items, totalItems] = await prisma.$transaction([

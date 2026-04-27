@@ -107,7 +107,9 @@ const documentService = {
     if (doc.uploader_id !== userId && doc.visibility === "private") {
       throw AppError.forbidden("You do not have access to this document");
     }
-    return toListItem(doc);
+    await documentRepository.incrementViewCount(documentId, userId);
+    const updated = await documentRepository.findById(documentId);
+    return toListItem(updated);
   },
 };
 
