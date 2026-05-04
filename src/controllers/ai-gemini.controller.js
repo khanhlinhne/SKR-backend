@@ -60,6 +60,41 @@ const aiGeminiController = {
     }
   },
 
+  async generateAssignment(req, res, next) {
+    try {
+      const data = await aiGeminiService.generateAssignmentDraft({
+        topic: req.body.topic,
+        criteriaCount: req.body.criteriaCount,
+        contextTitle: req.body.contextTitle,
+        language: req.body.language,
+      });
+      return success(res, {
+        message: "Assignment generated successfully",
+        data,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async gradeAssignment(req, res, next) {
+    try {
+      const data = await aiGeminiService.gradeAssignmentSubmission({
+        assignment: req.body.assignment,
+        answerText: req.body.answerText || req.body.learnerAnswer,
+        language: req.body.language,
+      });
+      return success(res, {
+        message: "Assignment graded successfully",
+        data: {
+          grade: data,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async listGenerations(req, res, next) {
     try {
       res.set("Cache-Control", "no-store, private");

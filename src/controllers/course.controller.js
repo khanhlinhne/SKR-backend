@@ -31,6 +31,19 @@ const courseController = {
     }
   },
 
+  async updateCourseProgress(req, res, next) {
+    try {
+      const data = await courseService.updateCourseProgress(
+        req.params.courseId,
+        req.user?.userId,
+        req.body
+      );
+      return success(res, { message: "Course progress updated successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async createCourse(req, res, next) {
     try {
       const data = await courseService.createCourse(req.user?.userId, req.body);
@@ -187,6 +200,22 @@ const courseController = {
     }
   },
 
+  async upsertLessonAssignment(req, res, next) {
+    try {
+      const data = await courseService.upsertLessonAssignment(
+        req.params.courseId,
+        req.params.chapterId,
+        req.params.lessonId,
+        req.user?.userId,
+        req.user?.roles,
+        req.body
+      );
+      return success(res, { message: "Lesson assignment saved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async getMyLessonAssignmentSubmission(req, res, next) {
     try {
       const data = await courseService.getMyLessonAssignmentSubmission(
@@ -196,6 +225,21 @@ const courseController = {
         req.user?.userId
       );
       return success(res, { message: "Assignment submission retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async submitLessonAssignment(req, res, next) {
+    try {
+      const data = await courseService.submitLessonAssignment(
+        req.params.courseId,
+        req.params.chapterId,
+        req.params.lessonId,
+        req.user?.userId,
+        req.body
+      );
+      return success(res, { statusCode: 201, message: "Assignment submitted successfully", data });
     } catch (err) {
       next(err);
     }

@@ -6,6 +6,8 @@ const {
   generateQuestionsRules,
   refineQuestionsRules,
   explainQuestionRules,
+  generateAssignmentRules,
+  gradeAssignmentRules,
   listGenerationsRules,
   getGenerationByIdRules,
 } = require("../validators/ai-gemini.validator");
@@ -146,6 +148,22 @@ router.post(
  *             language: vi
  */
 router.post("/explain", explainQuestionRules, validate, aiGeminiController.explainQuestion);
+
+router.post(
+  "/generate-assignment",
+  authenticateOptional,
+  generateAssignmentRules,
+  validate,
+  aiGeminiController.generateAssignment
+);
+
+router.post(
+  "/grade-assignment",
+  authenticateOptional,
+  gradeAssignmentRules,
+  validate,
+  aiGeminiController.gradeAssignment
+);
 
 /**
  * @swagger

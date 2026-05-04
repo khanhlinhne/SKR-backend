@@ -39,6 +39,7 @@ router.use("/quiz-practices", quizRoutes);
 router.use("/quiz-attempts", quizAttemptRoutes);
 router.use("/orders", orderRoutes);
 router.use("/payments", paymentRoutes);
+router.use("/expert", expertRoutes);
 router.use("/experts", expertRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/admin/registrations", registrationAdminRoutes);

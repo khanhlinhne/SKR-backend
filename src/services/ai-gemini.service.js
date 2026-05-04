@@ -191,6 +191,48 @@ function parseJsonSafe(raw) {
   }
 }
 
+function normalizeAssignmentRubricCriteria(criteria, maxScore, criteriaCount = 4) {
+  const rawItems = Array.isArray(criteria) ? criteria : [];
+  const fallbackCount = Math.max(2, Math.min(6, Number(criteriaCount) || 4));
+  const fallbackPoints = Math.floor(maxScore / fallbackCount);
+  const fallback = Array.from({ length: fallbackCount }, (_item, index) => ({
+    title: `Tieu chi ${index + 1}`,
+    description: "Danh gia muc do dap ung yeu cau cua de bai.",
+    maxPoints: index === fallbackCount - 1
+      ? maxScore - fallbackPoints * (fallbackCount - 1)
+      : fallbackPoints,
+  }));
+
+  return (rawItems.length ? rawItems : fallback)
+    .map((item, index) => ({
+      criterionId: String(item?.criterionId || item?.id || `criterion-${index + 1}`),
+      title: String(item?.title || item?.criterionTitle || `Tieu chi ${index + 1}`).trim(),
+      description: String(item?.description || item?.criterionDescription || "").trim(),
+      maxPoints: Math.max(0, Number(item?.maxPoints ?? item?.points ?? item?.score ?? 0) || 0),
+    }))
+    .filter((item) => item.title);
+}
+
+function normalizeAssignmentDraft(assignment, criteriaCount = 4) {
+  const maxScore = Math.max(1, Number(assignment?.maxScore) || 100);
+  const rubricCriteria = normalizeAssignmentRubricCriteria(
+    assignment?.rubricCriteria,
+    maxScore,
+    criteriaCount
+  );
+
+  return {
+    title: String(assignment?.title || "").trim(),
+    description: String(assignment?.description || "").trim(),
+    instructions: String(assignment?.instructions || "").trim(),
+    submissionFormat: String(assignment?.submissionFormat || "Tra loi bang van ban.").trim(),
+    reviewFocus: String(assignment?.reviewFocus || "").trim(),
+    maxScore,
+    rubricCriteria,
+    sourceType: "ai",
+  };
+}
+
 /**
  * Maps Google Generative AI SDK / HTTP errors to AppError (400 model, 429 quota, 502 other).
  */
@@ -509,6 +551,179 @@ Return JSON only:
   };
 }
 
+async function generateAssignmentDraft({
+  topic,
+  criteriaCount = 4,
+  contextTitle = "",
+  language = "vi",
+}) {
+  const trimmedTopic = String(topic || "").trim();
+  if (!trimmedTopic) {
+    throw AppError.badRequest("topic is required");
+  }
+
+  const count = Math.max(2, Math.min(6, Number(criteriaCount) || 4));
+  const { model, modelId } = await getGenerativeModelInstance();
+  const prompt = `You are an expert instructional designer.
+Language: ${language === "en" ? "English" : "Vietnamese"}.
+
+Create one practical learner assignment from the topic below.
+Return valid JSON only, no markdown.
+
+JSON schema:
+{
+  "assignment": {
+    "title": "string",
+    "description": "string",
+    "instructions": "string",
+    "submissionFormat": "string",
+    "maxScore": 100,
+    "reviewFocus": "string",
+    "rubricCriteria": [
+      {
+        "criterionId": "criterion-1",
+        "title": "string",
+        "description": "string",
+        "maxPoints": number
+      }
+    ]
+  }
+}
+
+Rules:
+- Create exactly ${count} rubric criteria.
+- Rubric maxPoints must sum to 100.
+- Make the assignment specific, assessable, and suitable for a course lesson.
+- Do not include markdown fences.
+
+Context title: ${truncate(String(contextTitle || ""), 1000)}
+Topic:
+---
+${truncate(trimmedTopic, 18000)}
+---`;
+
+  let text;
+  try {
+    const result = await model.generateContent(prompt);
+    text = result.response.text();
+  } catch (e) {
+    throw mapGeminiApiError(e);
+  }
+
+  const parsed = parseJsonSafe(text);
+  const assignment = normalizeAssignmentDraft(parsed?.assignment, count);
+
+  if (!assignment.title || !assignment.description || assignment.rubricCriteria.length === 0) {
+    throw AppError.badGateway("Gemini returned invalid assignment JSON.");
+  }
+
+  return {
+    assignment,
+    meta: {
+      model: modelId,
+      selectionMode: isEffectiveAutoMode() ? "auto" : "explicit",
+    },
+  };
+}
+
+async function gradeAssignmentSubmission({
+  assignment,
+  answerText,
+  language = "vi",
+}) {
+  if (!assignment || typeof assignment !== "object") {
+    throw AppError.badRequest("assignment is required");
+  }
+  if (!answerText || typeof answerText !== "string") {
+    throw AppError.badRequest("answerText is required");
+  }
+
+  const { model, modelId } = await getGenerativeModelInstance();
+  const maxScore = Number(assignment.maxScore || 100) || 100;
+  const rubric = Array.isArray(assignment.rubricCriteria) ? assignment.rubricCriteria : [];
+
+  const prompt = `You are an expert assignment grader.
+Language: ${language === "en" ? "English" : "Vietnamese"}.
+
+Grade the learner submission strictly against the assignment and rubric.
+Return valid JSON only, no markdown.
+
+JSON schema:
+{
+  "grade": {
+    "score": number,
+    "maxScore": ${maxScore},
+    "summary": "string",
+    "strengths": ["string"],
+    "improvements": ["string"],
+    "rubricScores": [
+      {
+        "criterionId": "string",
+        "criterionTitle": "string",
+        "awardedPoints": number,
+        "maxPoints": number,
+        "feedback": "string"
+      }
+    ]
+  }
+}
+
+Assignment:
+${JSON.stringify({
+    title: assignment.title,
+    description: assignment.description,
+    instructions: assignment.instructions,
+    submissionFormat: assignment.submissionFormat,
+    reviewFocus: assignment.reviewFocus,
+    maxScore,
+    rubricCriteria: rubric,
+  }, null, 2)}
+
+Learner submission:
+---
+${truncate(answerText, 24000)}
+---`;
+
+  let text;
+  try {
+    const result = await model.generateContent(prompt);
+    text = result.response.text();
+  } catch (e) {
+    throw mapGeminiApiError(e);
+  }
+
+  const parsed = parseJsonSafe(text);
+  const grade = parsed?.grade;
+  if (!grade || typeof grade !== "object") {
+    throw AppError.badGateway("Gemini returned invalid assignment grade JSON.");
+  }
+
+  const rubricScores = Array.isArray(grade.rubricScores)
+    ? grade.rubricScores.map((item, index) => {
+        const sourceCriterion = rubric[index] || {};
+        const maxPoints = Number(item.maxPoints ?? sourceCriterion.maxPoints ?? 0) || 0;
+        return {
+          criterionId: String(item.criterionId || sourceCriterion.criterionId || `criterion-${index + 1}`),
+          criterionTitle: String(item.criterionTitle || sourceCriterion.title || `Tieu chi ${index + 1}`),
+          awardedPoints: Math.max(0, Math.min(Number(item.awardedPoints) || 0, maxPoints || maxScore)),
+          maxPoints,
+          feedback: String(item.feedback || ""),
+        };
+      })
+    : [];
+
+  return {
+    score: Math.max(0, Math.min(Number(grade.score) || 0, maxScore)),
+    maxScore,
+    summary: String(grade.summary || ""),
+    strengths: Array.isArray(grade.strengths) ? grade.strengths.map(String).filter(Boolean) : [],
+    improvements: Array.isArray(grade.improvements) ? grade.improvements.map(String).filter(Boolean) : [],
+    rubricScores,
+    aiModel: modelId,
+    aiProvider: "google_gemini",
+  };
+}
+
 async function listGenerations(query = {}) {
   const page = Math.max(parseInt(query.page, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(query.limit, 10) || 10, 1), 100);
@@ -558,6 +773,8 @@ module.exports = {
   generateQuestionsFromContent,
   refineQuestionsForReview,
   explainQuestion,
+  generateAssignmentDraft,
+  gradeAssignmentSubmission,
   listGenerations,
   getGenerationById,
 };

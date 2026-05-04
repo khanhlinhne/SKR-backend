@@ -78,6 +78,51 @@ const explainQuestionRules = [
     .withMessage("language must be vi or en"),
 ];
 
+const generateAssignmentRules = [
+  body("topic")
+    .trim()
+    .notEmpty()
+    .withMessage("topic is required")
+    .isLength({ max: 20000 })
+    .withMessage("topic is too long"),
+  body("criteriaCount")
+    .optional()
+    .isInt({ min: 2, max: 6 })
+    .withMessage("criteriaCount must be between 2 and 6"),
+  body("contextTitle")
+    .optional()
+    .isString()
+    .isLength({ max: 5000 })
+    .withMessage("contextTitle too long"),
+  body("language")
+    .optional()
+    .isIn(["vi", "en"])
+    .withMessage("language must be vi or en"),
+];
+
+const gradeAssignmentRules = [
+  body("assignment")
+    .exists()
+    .withMessage("assignment is required")
+    .bail()
+    .isObject()
+    .withMessage("assignment must be an object"),
+  body("learnerAnswer")
+    .optional()
+    .isString()
+    .isLength({ max: 50000 })
+    .withMessage("learnerAnswer is too long"),
+  body("answerText")
+    .optional()
+    .isString()
+    .isLength({ max: 50000 })
+    .withMessage("answerText is too long"),
+  body("language")
+    .optional()
+    .isIn(["vi", "en"])
+    .withMessage("language must be vi or en"),
+];
+
 const listGenerationsRules = [
   query("page")
     .optional()
@@ -107,6 +152,8 @@ module.exports = {
   generateQuestionsRules,
   refineQuestionsRules,
   explainQuestionRules,
+  generateAssignmentRules,
+  gradeAssignmentRules,
   listGenerationsRules,
   getGenerationByIdRules,
 };

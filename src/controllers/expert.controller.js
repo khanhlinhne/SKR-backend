@@ -1,6 +1,7 @@
 const { expertService, userIsAdmin } = require("../services/expert.service");
 const expertAnalyticsService = require("../services/expert-analytics.service");
 const expertAnalyticsDto = require("../dtos/expert-analytics.dto");
+const courseService = require("../services/course.service");
 const { success } = require("../utils/response.util");
 
 const expertController = {
@@ -110,6 +111,32 @@ const expertController = {
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${data.filename}"`);
       return res.status(200).send(data.csv);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async listAssignmentSubmissions(req, res, next) {
+    try {
+      const data = await courseService.listExpertAssignmentSubmissions(
+        req.user?.userId,
+        req.user?.roles,
+        req.query
+      );
+      return success(res, { message: "Assignment submissions retrieved successfully", data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getAssignmentSubmissionDetail(req, res, next) {
+    try {
+      const data = await courseService.getExpertAssignmentSubmissionDetail(
+        req.user?.userId,
+        req.user?.roles,
+        req.params.submissionId
+      );
+      return success(res, { message: "Assignment submission retrieved successfully", data });
     } catch (err) {
       next(err);
     }

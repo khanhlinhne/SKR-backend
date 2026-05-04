@@ -135,6 +135,20 @@ router.get(
   expertController.exportCourseEnrollments
 );
 
+router.get(
+  "/assignment-submissions",
+  authenticate,
+  authorize("creator", "admin"),
+  expertController.listAssignmentSubmissions
+);
+
+router.get(
+  "/assignment-submissions/:submissionId",
+  authenticate,
+  authorize("creator", "admin"),
+  expertController.getAssignmentSubmissionDetail
+);
+
 /**
  * @swagger
  * /api/experts/{expertId}:

@@ -2,8 +2,10 @@ const path = require("path");
 const AppError = require("../utils/AppError");
 const courseRepository = require("../repositories/course.repository");
 const courseProgressRepository = require("../repositories/course-progress.repository");
+const assignmentRepository = require("../repositories/assignment.repository");
 const userRepository = require("../repositories/user.repository");
 const courseDto = require("../dtos/course.dto");
+const aiGeminiService = require("./ai-gemini.service");
 
 const ALLOWED_SORT_FIELDS = {
   createdAt: "created_at_utc",
@@ -93,6 +95,316 @@ function getFileTypeFromName(fileName) {
 function toSafeNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeText(value, fallback = "") {
+  return String(value ?? fallback).trim();
+}
+
+function normalizeBoundedText(value, maxLength, fallback = "") {
+  const normalized = normalizeText(value, fallback);
+  if (!maxLength || normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return normalized.slice(0, maxLength).trim();
+}
+
+function normalizeJsonArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeRubricCriteria(criteria, maxScore = 100) {
+  const items = normalizeJsonArray(criteria);
+  const fallback = [
+    {
+      criterionId: "criterion-1",
+      title: "Muc do dap ung yeu cau",
+      description: "Tra loi dung trong tam va giai quyet yeu cau cua de bai.",
+      maxPoints: 40,
+    },
+    {
+      criterionId: "criterion-2",
+      title: "Lap luan va giai thich",
+      description: "Dien giai ro rang, co logic va co vi du phu hop.",
+      maxPoints: 35,
+    },
+    {
+      criterionId: "criterion-3",
+      title: "Trinh bay",
+      description: "Cau truc gon gang, de doc va de danh gia.",
+      maxPoints: 25,
+    },
+  ];
+
+  return (items.length ? items : fallback)
+    .map((item, index) => ({
+      criterionId: normalizeText(item?.criterionId || item?.id, `criterion-${index + 1}`),
+      title: normalizeText(item?.title || item?.criterionTitle, `Tieu chi ${index + 1}`),
+      description: normalizeText(item?.description || item?.criterionDescription),
+      maxPoints: Math.max(0, toSafeNumber(item?.maxPoints ?? item?.score ?? item?.weight, 0)),
+    }))
+    .filter((item) => item.title);
+}
+
+function mapAssignment(row, context = {}) {
+  if (!row) return null;
+
+  const maxScore = Math.max(1, toSafeNumber(row.max_score, context.maxScore ?? 100));
+
+  return {
+    assignmentId: row.assignment_id || context.assignmentId || row.lesson_id,
+    courseId: row.course_id || context.courseId || null,
+    chapterId: row.chapter_id || context.chapterId || null,
+    lessonId: row.lesson_id || context.lessonId || null,
+    title: row.title || context.title || "",
+    description: row.description || "",
+    instructions: row.instructions || "",
+    submissionFormat: row.submission_format || "Tra loi bang van ban.",
+    reviewFocus: row.review_focus || "",
+    maxScore,
+    rubricCriteria: normalizeRubricCriteria(row.rubric_criteria, maxScore),
+    sourceType: row.source_type || "manual",
+    updatedAtUtc: row.updated_at_utc || row.created_at_utc || null,
+    status: row.status || "active",
+    available: row.status !== "deleted",
+  };
+}
+
+function mapFallbackAssignment(lessonDetail, context = {}) {
+  return {
+    assignmentId: lessonDetail.lessonId,
+    courseId: context.courseId || null,
+    chapterId: context.chapterId || null,
+    lessonId: lessonDetail.lessonId,
+    title: lessonDetail.lessonName,
+    description: lessonDetail.lessonDescription || "",
+    instructions: lessonDetail.learningObjectives || "",
+    submissionFormat: "Tra loi bang van ban.",
+    reviewFocus: "",
+    maxScore: 100,
+    rubricCriteria: normalizeRubricCriteria([], 100),
+    sourceType: "lesson",
+    status: "active",
+    available: lessonDetail.hasAssignment,
+    documents: lessonDetail.documents,
+    questions: lessonDetail.questions,
+    flashcardSets: lessonDetail.flashcardSets,
+  };
+}
+
+function mapAssignmentSubmission(row) {
+  if (!row) return null;
+
+  const learner = row.mst_users || {};
+  const assignment = row.lrn_lesson_assignments || {};
+  const course = row.mst_courses || {};
+  const chapter = row.mst_chapters || {};
+  const lesson = row.mst_lessons || {};
+  const maxScore = Math.max(1, toSafeNumber(row.max_score ?? assignment.max_score, 100));
+
+  return {
+    submissionId: row.submission_id,
+    assignmentId: row.assignment_id,
+    courseId: row.course_id,
+    chapterId: row.chapter_id,
+    lessonId: row.lesson_id,
+    courseTitle: course.course_name || "",
+    chapterTitle: chapter.chapter_name || "",
+    lessonTitle: lesson.lesson_name || "",
+    assignmentTitle: assignment.title || "",
+    learnerId: row.user_id,
+    learnerName: learner.display_name || learner.full_name || learner.email || "Hoc vien",
+    learnerAvatarUrl: learner.avatar_url || "",
+    answerText: row.answer_text || "",
+    submittedAtUtc: row.submitted_at_utc,
+    gradedAtUtc: row.graded_at_utc,
+    status: row.status || "graded",
+    score: toSafeNumber(row.score, 0),
+    maxScore,
+    summary: row.summary || "",
+    strengths: normalizeJsonArray(row.strengths),
+    improvements: normalizeJsonArray(row.improvements),
+    rubricScores: normalizeJsonArray(row.rubric_scores),
+  };
+}
+
+function gradeAssignmentSubmissionFallback(assignment, answerText) {
+  const text = normalizeText(answerText);
+  const maxScore = Math.max(1, toSafeNumber(assignment?.maxScore, 100));
+  const criteria = normalizeRubricCriteria(assignment?.rubricCriteria, maxScore);
+
+  if (!text) {
+    return {
+      score: 0,
+      summary: "Bai nop khong co noi dung de cham diem.",
+      strengths: [],
+      improvements: ["Can nop cau tra loi day du theo de bai."],
+      rubricScores: criteria.map((criterion) => ({
+        criterionId: criterion.criterionId,
+        criterionTitle: criterion.title,
+        awardedPoints: 0,
+        maxPoints: criterion.maxPoints,
+        feedback: "Chua co noi dung de danh gia.",
+      })),
+    };
+  }
+
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  const coverageRatio = Math.max(0.25, Math.min(1, wordCount / 180));
+  const clarityBoost = /(\n|- |\d+\.)/.test(text) ? 0.08 : 0;
+  const scoreRatio = Math.min(0.94, coverageRatio + clarityBoost);
+  const rubricScores = criteria.map((criterion) => ({
+    criterionId: criterion.criterionId,
+    criterionTitle: criterion.title,
+    awardedPoints: Math.round(toSafeNumber(criterion.maxPoints, 0) * scoreRatio),
+    maxPoints: toSafeNumber(criterion.maxPoints, 0),
+    feedback: scoreRatio >= 0.75
+      ? "Bai lam dap ung kha tot tieu chi nay."
+      : "Can bo sung them ly giai, vi du hoac cau truc de dat diem cao hon.",
+  }));
+  const score = Math.min(
+    maxScore,
+    rubricScores.reduce((sum, item) => sum + item.awardedPoints, 0) || Math.round(maxScore * scoreRatio)
+  );
+
+  return {
+    score,
+    summary: "Bai nop da duoc luu va cham theo rubric assignment.",
+    strengths: scoreRatio >= 0.7 ? ["Bai lam co cau truc va bao phu duoc yeu cau chinh."] : [],
+    improvements: ["Nen bo sung ly giai cu the hon de tang do thuyet phuc."],
+    rubricScores,
+  };
+}
+
+async function gradeAssignmentSubmissionWithAi(assignment, answerText) {
+  try {
+    const grade = await aiGeminiService.gradeAssignmentSubmission({
+      assignment,
+      answerText,
+      language: "vi",
+    });
+
+    return {
+      score: grade.score,
+      summary: grade.summary || "Gemini da cham bai theo rubric assignment.",
+      strengths: grade.strengths,
+      improvements: grade.improvements,
+      rubricScores: grade.rubricScores,
+      aiModel: grade.aiModel,
+      aiProvider: grade.aiProvider,
+    };
+  } catch (error) {
+    const message = error?.message || "unknown error";
+    console.warn(`[Assignment][Gemini] Falling back to local grading: ${message}`);
+
+    const fallback = gradeAssignmentSubmissionFallback(assignment, answerText);
+    return {
+      ...fallback,
+      summary: `${fallback.summary} Fallback local vi Gemini loi: ${message}`,
+      aiModel: null,
+      aiProvider: "local_fallback",
+    };
+  }
+}
+
+function buildProgressResponse({ courseId, purchase, totalLessons, totalChapters, progressRows }) {
+  const completedRows = (progressRows || []).filter((row) => row.completed);
+  const completedLessonIds = completedRows.map((row) => row.lesson_id);
+  const lessonProgressById = Object.fromEntries(
+    (progressRows || []).map((row) => [
+      row.lesson_id,
+      {
+        lessonId: row.lesson_id,
+        chapterId: row.chapter_id,
+        completed: Boolean(row.completed),
+        completedAt: row.completed_at_utc,
+        updatedAt: row.updated_at_utc || row.created_at_utc,
+      },
+    ])
+  );
+
+  return {
+    courseId,
+    isEnrolled: Boolean(purchase),
+    status: purchase?.status ?? "not_started",
+    progressPercent: toSafeNumber(purchase?.progress_percent),
+    completedLessons: toSafeNumber(purchase?.lessons_completed),
+    totalLessons,
+    completedChapters: toSafeNumber(purchase?.chapters_completed),
+    totalChapters,
+    completedLessonIds,
+    progress: Object.values(lessonProgressById),
+    lessonProgressById,
+    lastAccessedAt: purchase?.last_accessed_at_utc ?? null,
+    completedAt: purchase?.completed_at_utc ?? null,
+  };
+}
+
+function getActiveCourseStructureFromCourse(course) {
+  return (course?.mst_chapters || [])
+    .filter((chapter) => chapter.is_active !== false)
+    .map((chapter) => ({
+      chapter_id: chapter.chapter_id,
+      mst_lessons: (chapter.mst_lessons || [])
+        .filter((lesson) => lesson.is_active !== false)
+        .map((lesson) => ({ lesson_id: lesson.lesson_id })),
+    }));
+}
+
+async function saveCourseLessonProgressSnapshot({
+  purchase,
+  courseId,
+  userId,
+  structure,
+  chapterId,
+  lessonId,
+  completed = true,
+}) {
+  const currentRows = await courseProgressRepository.findLessonProgressRows(purchase.purchase_id);
+  const activeLessonIds = new Set(
+    structure.flatMap((chapter) => (chapter.mst_lessons || []).map((lesson) => lesson.lesson_id))
+  );
+  const completedSet = new Set(
+    currentRows
+      .filter((row) => row.completed && activeLessonIds.has(row.lesson_id))
+      .map((row) => row.lesson_id)
+  );
+
+  if (completed) {
+    completedSet.add(lessonId);
+  } else {
+    completedSet.delete(lessonId);
+  }
+
+  const totalLessons = activeLessonIds.size;
+  const completedLessons = completedSet.size;
+  const chaptersCompleted = structure.filter((chapter) => {
+    const lessonIds = (chapter.mst_lessons || []).map((lesson) => lesson.lesson_id);
+    return lessonIds.length > 0 && lessonIds.every((id) => completedSet.has(id));
+  }).length;
+  const progressPercent = totalLessons > 0
+    ? Math.round((completedLessons / totalLessons) * 10000) / 100
+    : 0;
+  const updatedAt = new Date();
+  const completedAtUtc = progressPercent >= 100 && totalLessons > 0
+    ? purchase.completed_at_utc || updatedAt
+    : null;
+
+  await courseProgressRepository.saveLessonProgressAndPurchaseSnapshot({
+    purchaseId: purchase.purchase_id,
+    courseId,
+    userId,
+    chapterId,
+    lessonId,
+    completed,
+    completedLessons,
+    chaptersCompleted,
+    progressPercent,
+    totalLessons,
+    completedAtUtc,
+    updatedAt,
+  });
 }
 
 function ensureActiveLessonInCourse(course, chapterId, lessonId) {
@@ -190,34 +502,131 @@ const courseService = {
       throw AppError.unauthorized("Authentication required to view course progress.");
     }
 
-    const [course, purchase] = await Promise.all([
+    const [course, purchase, structure] = await Promise.all([
       courseRepository.findByIdWithStructure(courseId),
       courseProgressRepository.findPurchaseByUserAndCourse(userId, courseId),
+      courseProgressRepository.findActiveCourseStructure(courseId),
     ]);
 
     if (!course || !course.is_active) {
       throw AppError.notFound("Course not found");
     }
 
-    const totalChapters = toSafeNumber(course.total_chapters ?? course.mst_chapters?.length);
-    const totalLessons = toSafeNumber(course.total_lessons);
-    const completedLessons = toSafeNumber(purchase?.lessons_completed);
-    const completedChapters = toSafeNumber(purchase?.chapters_completed);
-    const progressPercent = toSafeNumber(purchase?.progress_percent);
+    const totalChapters = structure.length || toSafeNumber(course.total_chapters ?? course.mst_chapters?.length);
+    const totalLessons = structure.reduce((sum, chapter) => sum + (chapter.mst_lessons || []).length, 0)
+      || toSafeNumber(course.total_lessons);
+    const progressRows = purchase?.purchase_id
+      ? await courseProgressRepository.findLessonProgressRows(purchase.purchase_id)
+      : [];
 
-    return {
+    return buildProgressResponse({
       courseId,
-      isEnrolled: Boolean(purchase),
-      status: purchase?.status ?? "not_started",
-      progressPercent,
-      completedLessons,
+      purchase,
       totalLessons,
-      completedChapters,
       totalChapters,
-      lastAccessedAt: purchase?.last_accessed_at_utc ?? null,
-      completedAt: purchase?.completed_at_utc ?? null,
-      lessonProgressById: {},
-    };
+      progressRows,
+    });
+  },
+
+  async updateCourseProgress(courseId, userId, body = {}) {
+    if (!userId) {
+      throw AppError.unauthorized("Authentication required to update course progress.");
+    }
+
+    const lessonId = normalizeText(body.lessonId || body.lesson_id);
+    const requestedChapterId = normalizeText(body.chapterId || body.chapter_id);
+    const completed = body.completed !== false;
+
+    if (!lessonId) {
+      throw AppError.badRequest("lessonId is required.");
+    }
+
+    const [course, purchase, lessonContext, structure] = await Promise.all([
+      courseRepository.findByIdWithStructure(courseId),
+      courseProgressRepository.findPurchaseByUserAndCourse(userId, courseId),
+      courseProgressRepository.findLessonContext(lessonId),
+      courseProgressRepository.findActiveCourseStructure(courseId),
+    ]);
+
+    if (!course || !course.is_active) {
+      throw AppError.notFound("Course not found");
+    }
+
+    if (!purchase) {
+      throw AppError.forbidden("You need to enroll in this course before saving progress.");
+    }
+
+    if (
+      !lessonContext
+      || !lessonContext.is_active
+      || !lessonContext.mst_chapters?.is_active
+      || lessonContext.mst_chapters.course_id !== courseId
+    ) {
+      throw AppError.notFound("Lesson not found in this course.");
+    }
+
+    const chapterId = requestedChapterId || lessonContext.chapter_id;
+    if (chapterId !== lessonContext.chapter_id) {
+      throw AppError.badRequest("chapterId does not match lessonId.");
+    }
+
+    const currentRows = await courseProgressRepository.findLessonProgressRows(purchase.purchase_id);
+    const activeLessonIds = new Set(
+      structure.flatMap((chapter) => (chapter.mst_lessons || []).map((lesson) => lesson.lesson_id))
+    );
+    const completedSet = new Set(
+      currentRows
+        .filter((row) => row.completed && activeLessonIds.has(row.lesson_id))
+        .map((row) => row.lesson_id)
+    );
+
+    if (completed) {
+      completedSet.add(lessonId);
+    } else {
+      completedSet.delete(lessonId);
+    }
+
+    const totalLessons = activeLessonIds.size;
+    const completedLessons = completedSet.size;
+    const chaptersCompleted = structure.filter((chapter) => {
+      const lessonIds = (chapter.mst_lessons || []).map((lesson) => lesson.lesson_id);
+      return lessonIds.length > 0 && lessonIds.every((id) => completedSet.has(id));
+    }).length;
+    const progressPercent = totalLessons > 0
+      ? Math.round((completedLessons / totalLessons) * 10000) / 100
+      : 0;
+    const updatedAt = new Date();
+    const completedAtUtc = progressPercent >= 100 && totalLessons > 0
+      ? purchase.completed_at_utc || updatedAt
+      : null;
+
+    await courseProgressRepository.saveLessonProgressAndPurchaseSnapshot({
+      purchaseId: purchase.purchase_id,
+      courseId,
+      userId,
+      chapterId,
+      lessonId,
+      completed,
+      completedLessons,
+      chaptersCompleted,
+      progressPercent,
+      totalLessons,
+      completedAtUtc,
+      updatedAt,
+    });
+
+    const [updatedPurchase, progressRows] = await Promise.all([
+      courseProgressRepository.findPurchaseByUserAndCourse(userId, courseId),
+      courseProgressRepository.findLessonProgressRows(purchase.purchase_id),
+    ]);
+
+    return buildProgressResponse({
+      courseId,
+      purchase: updatedPurchase,
+      totalLessons,
+      totalChapters: structure.length,
+      progressRows,
+    });
   },
 
   async createCourse(userId, body) {
@@ -611,20 +1020,80 @@ const courseService = {
       throw AppError.notFound("Lesson not found in this chapter");
     }
 
-    const lessonDetail = courseDto.toLessonDetail(lesson);
+    const [lessonDetail, assignmentRow] = await Promise.all([
+      Promise.resolve(courseDto.toLessonDetail(lesson)),
+      assignmentRepository.findAssignmentByLesson(lessonId),
+    ]);
 
-    return {
-      assignmentId: lessonDetail.lessonId,
-      lessonId: lessonDetail.lessonId,
-      title: lessonDetail.lessonName,
-      description: lessonDetail.lessonDescription,
-      instructions: lessonDetail.learningObjectives,
-      lessonType: lessonDetail.lessonType,
-      available: lessonDetail.hasAssignment,
-      documents: lessonDetail.documents,
-      questions: lessonDetail.questions,
-      flashcardSets: lessonDetail.flashcardSets,
-    };
+    return mapAssignment(assignmentRow, { courseId, chapterId, lessonId })
+      || mapFallbackAssignment(lessonDetail, { courseId, chapterId });
+  },
+
+  async upsertLessonAssignment(courseId, chapterId, lessonId, userId, roles = [], body = {}) {
+    if (!userId) {
+      throw AppError.unauthorized("Authentication required to save assignment.");
+    }
+
+    const [course, chapter, lesson] = await Promise.all([
+      courseRepository.findById(courseId),
+      courseRepository.findChapterById(chapterId),
+      courseRepository.findLessonById(lessonId),
+    ]);
+
+    if (!course || !course.is_active) {
+      throw AppError.notFound("Course not found");
+    }
+
+    const isAdmin = Array.isArray(roles) && roles.includes("admin");
+    if (!isAdmin && course.creator_id !== userId) {
+      throw AppError.forbidden("You can only edit assignments in your own courses.");
+    }
+
+    if (!chapter || chapter.course_id !== courseId || !chapter.is_active) {
+      throw AppError.notFound("Chapter not found in this course");
+    }
+
+    if (!lesson || lesson.chapter_id !== chapterId || lesson.is_active === false) {
+      throw AppError.notFound("Lesson not found in this chapter");
+    }
+
+    const title = normalizeBoundedText(body.title || body.assignmentTitle || lesson.lesson_name, 255);
+    const description = normalizeText(body.description || body.brief || body.prompt);
+    const maxScore = Math.max(1, toSafeNumber(body.maxScore ?? body.maximumScore ?? body.totalPoints, 100));
+
+    if (!title || !description) {
+      throw AppError.badRequest("Assignment title and description are required.");
+    }
+
+    const rubricCriteria = normalizeRubricCriteria(
+      body.rubricCriteria || body.rubric || body.criteria,
+      maxScore
+    );
+
+    const assignment = await assignmentRepository.upsertAssignment({
+      courseId,
+      chapterId,
+      lessonId,
+      title,
+      description,
+      instructions: normalizeText(body.instructions || body.submissionInstructions),
+      submissionFormat: normalizeText(body.submissionFormat || body.answerFormat, "Tra loi bang van ban."),
+      reviewFocus: normalizeText(body.reviewFocus || body.feedbackFocus),
+      maxScore,
+      rubricCriteria,
+      sourceType: normalizeBoundedText(body.sourceType || body.createdBy, 50, "manual").toLowerCase(),
+      status: normalizeBoundedText(body.status, 50, "active").toLowerCase(),
+      userId,
+    });
+
+    if (lesson.lesson_type !== "assignment") {
+      await courseRepository.updateLesson(lessonId, {
+        lessonType: "assignment",
+        updatedBy: userId,
+      });
+    }
+
+    return mapAssignment(assignment, { courseId, chapterId, lessonId });
   },
 
   async getMyLessonAssignmentSubmission(courseId, chapterId, lessonId, userId) {
@@ -644,15 +1113,125 @@ const courseService = {
       throw AppError.notFound("Lesson not found in this chapter");
     }
 
-    const lessonDetail = courseDto.toLessonDetail(lesson);
+    const submission = await assignmentRepository.findSubmissionByLessonAndUser(lessonId, userId);
+    return mapAssignmentSubmission(submission);
+  },
+
+  async submitLessonAssignment(courseId, chapterId, lessonId, userId, body = {}) {
+    if (!userId) {
+      throw AppError.unauthorized("Authentication required to submit assignment.");
+    }
+
+    const answerText = normalizeText(body.answerText || body.submissionText || body.answer);
+    if (!answerText) {
+      throw AppError.badRequest("answerText is required.");
+    }
+
+    const [course, purchase] = await Promise.all([
+      courseRepository.findByIdWithStructure(courseId),
+      courseProgressRepository.findPurchaseByUserAndCourse(userId, courseId),
+    ]);
+
+    if (!course || !course.is_active) {
+      throw AppError.notFound("Course not found");
+    }
+
+    if (!purchase) {
+      throw AppError.forbidden("You need to enroll in this course before submitting assignment.");
+    }
+
+    ensureActiveLessonInCourse(course, chapterId, lessonId);
+
+    let assignment = mapAssignment(await assignmentRepository.findAssignmentByLesson(lessonId), {
+      courseId,
+      chapterId,
+      lessonId,
+    });
+
+    if (!assignment && body.assignment) {
+      const saved = await this.upsertLessonAssignment(
+        courseId,
+        chapterId,
+        lessonId,
+        course.creator_id || userId,
+        ["admin"],
+        body.assignment
+      );
+      assignment = saved;
+    }
+
+    if (!assignment) {
+      throw AppError.notFound("Assignment not found for this lesson.");
+    }
+
+    const grade = await gradeAssignmentSubmissionWithAi(assignment, answerText);
+    const submission = await assignmentRepository.upsertSubmission({
+      assignmentId: assignment.assignmentId,
+      courseId,
+      chapterId,
+      lessonId,
+      userId,
+      answerText,
+      score: grade.score,
+      maxScore: assignment.maxScore,
+      summary: grade.summary,
+      strengths: grade.strengths,
+      improvements: grade.improvements,
+      rubricScores: grade.rubricScores,
+      gradedAtUtc: new Date(),
+      status: "graded",
+    });
+
+    await saveCourseLessonProgressSnapshot({
+      purchase,
+      courseId,
+      userId,
+      structure: getActiveCourseStructureFromCourse(course),
+      lessonId,
+      chapterId,
+      completed: true,
+    });
 
     return {
-      assignmentId: lessonId,
-      lessonId,
-      status: "not_submitted",
-      submission: null,
-      available: lessonDetail.hasAssignment,
+      ...mapAssignmentSubmission(submission),
+      aiProvider: grade.aiProvider,
+      aiModel: grade.aiModel,
     };
+  },
+
+  async listExpertAssignmentSubmissions(userId, roles = [], query = {}) {
+    if (!userId) {
+      throw AppError.unauthorized("Authentication required to view assignment submissions.");
+    }
+
+    const items = await assignmentRepository.listExpertSubmissions({
+      userId,
+      isAdmin: Array.isArray(roles) && roles.includes("admin"),
+      status: normalizeText(query.status || "all").toLowerCase(),
+      search: normalizeText(query.search),
+      courseId: normalizeText(query.courseId),
+      lessonId: normalizeText(query.lessonId),
+    });
+
+    return items.map(mapAssignmentSubmission);
+  },
+
+  async getExpertAssignmentSubmissionDetail(userId, roles = [], submissionId) {
+    if (!userId) {
+      throw AppError.unauthorized("Authentication required to view assignment submission.");
+    }
+
+    const submission = await assignmentRepository.findSubmissionById(submissionId);
+    if (!submission || submission.status === "deleted") {
+      throw AppError.notFound("Assignment submission not found.");
+    }
+
+    const isAdmin = Array.isArray(roles) && roles.includes("admin");
+    if (!isAdmin && submission.mst_courses?.creator_id !== userId) {
+      throw AppError.forbidden("You can only view submissions for your own courses.");
+    }
+
+    return mapAssignmentSubmission(submission);
   },
 
   async addVideo(courseId, chapterId, lessonId, userId, body) {

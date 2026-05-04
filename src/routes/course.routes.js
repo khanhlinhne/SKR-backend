@@ -226,6 +226,14 @@ router.get(
   courseController.getCourseProgress
 );
 
+router.put(
+  "/:courseId/progress",
+  authenticate,
+  courseIdParamRules,
+  validate,
+  courseController.updateCourseProgress
+);
+
 /**
  * @swagger
  * /api/courses/{id}:
@@ -728,12 +736,29 @@ router.get(
   courseController.getLessonAssignment
 );
 
+router.put(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/assignment",
+  authenticate,
+  authorize("admin", "creator"),
+  deleteLessonRules,
+  validate,
+  courseController.upsertLessonAssignment
+);
+
 router.get(
   "/:courseId/chapters/:chapterId/lessons/:lessonId/assignment/submissions/me",
   authenticate,
   deleteLessonRules,
   validate,
   courseController.getMyLessonAssignmentSubmission
+);
+
+router.post(
+  "/:courseId/chapters/:chapterId/lessons/:lessonId/assignment/submissions",
+  authenticate,
+  deleteLessonRules,
+  validate,
+  courseController.submitLessonAssignment
 );
 
 // ── Videos ──

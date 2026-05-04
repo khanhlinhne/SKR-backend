@@ -635,6 +635,72 @@ model lrn_subject_lesson_progress {
   @@index([chapter_id], map: "idx_lesson_progress_chapter")
 }
 
+model lrn_lesson_assignments {
+  assignment_id              String                       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  course_id                  String                       @map("subject_id") @db.Uuid
+  chapter_id                 String                       @db.Uuid
+  lesson_id                  String                       @unique @db.Uuid
+  title                      String                       @db.VarChar(255)
+  description                String?
+  instructions               String?
+  submission_format          String?                      @db.Text
+  review_focus               String?
+  max_score                  Decimal                      @default(100.00) @db.Decimal(7, 2)
+  rubric_criteria            Json?
+  source_type                String?                      @default("manual") @db.VarChar(50)
+  created_by                 String                       @db.Uuid
+  created_at_utc             DateTime                     @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by                 String?                      @db.Uuid
+  updated_at_utc             DateTime?                    @db.Timestamp(6)
+  status                     String?                      @default("active") @db.VarChar(50)
+  mst_courses                mst_courses                  @relation("lesson_assignments_course", fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lesson_assignments_subject")
+  mst_chapters               mst_chapters                 @relation("lesson_assignments_chapter", fields: [chapter_id], references: [chapter_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lesson_assignments_chapter")
+  mst_lessons                mst_lessons                  @relation("lesson_assignments_lesson", fields: [lesson_id], references: [lesson_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lesson_assignments_lesson")
+  lrn_assignment_submissions lrn_assignment_submissions[]
+
+  @@index([course_id], map: "idx_lesson_assignments_subject")
+  @@index([chapter_id], map: "idx_lesson_assignments_chapter")
+  @@index([lesson_id], map: "idx_lesson_assignments_lesson")
+  @@index([status], map: "idx_lesson_assignments_status")
+}
+
+model lrn_assignment_submissions {
+  submission_id          String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  assignment_id          String                 @db.Uuid
+  course_id              String                 @map("subject_id") @db.Uuid
+  chapter_id             String                 @db.Uuid
+  lesson_id              String                 @db.Uuid
+  user_id                String                 @db.Uuid
+  answer_text            String
+  score                  Decimal?               @db.Decimal(7, 2)
+  max_score              Decimal?               @default(100.00) @db.Decimal(7, 2)
+  summary                String?
+  strengths              Json?
+  improvements           Json?
+  rubric_scores          Json?
+  submitted_at_utc       DateTime               @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  graded_at_utc          DateTime?              @db.Timestamp(6)
+  created_by             String                 @db.Uuid
+  created_at_utc         DateTime               @default(dbgenerated("(now() AT TIME ZONE 'UTC'::text)")) @db.Timestamp(6)
+  updated_by             String?                @db.Uuid
+  updated_at_utc         DateTime?              @db.Timestamp(6)
+  status                 String?                @default("graded") @db.VarChar(50)
+  lrn_lesson_assignments lrn_lesson_assignments @relation(fields: [assignment_id], references: [assignment_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_assignment_submissions_assignment")
+  mst_courses            mst_courses            @relation("assignment_submissions_course", fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_assignment_submissions_subject")
+  mst_chapters           mst_chapters           @relation("assignment_submissions_chapter", fields: [chapter_id], references: [chapter_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_assignment_submissions_chapter")
+  mst_lessons            mst_lessons            @relation("assignment_submissions_lesson", fields: [lesson_id], references: [lesson_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_assignment_submissions_lesson")
+  mst_users              mst_users              @relation("assignment_submissions_user", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_assignment_submissions_user")
+
+  @@unique([assignment_id, user_id])
+  @@index([assignment_id], map: "idx_assignment_submissions_assignment")
+  @@index([course_id], map: "idx_assignment_submissions_subject")
+  @@index([chapter_id], map: "idx_assignment_submissions_chapter")
+  @@index([lesson_id], map: "idx_assignment_submissions_lesson")
+  @@index([user_id], map: "idx_assignment_submissions_user")
+  @@index([submitted_at_utc(sort: Desc)], map: "idx_assignment_submissions_submitted_at")
+  @@index([status], map: "idx_assignment_submissions_status")
+}
+
 model mst_chapters {
   chapter_id                 String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   course_id                  String       @map("subject_id") @db.Uuid
@@ -651,6 +717,8 @@ model mst_chapters {
   is_active                  Boolean?     @default(true)
   mst_courses                mst_courses  @relation(fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_chapters_subject")
   lrn_subject_lesson_progress lrn_subject_lesson_progress[]
+  lrn_lesson_assignments     lrn_lesson_assignments[]     @relation("lesson_assignments_chapter")
+  lrn_assignment_submissions lrn_assignment_submissions[] @relation("assignment_submissions_chapter")
   mst_lessons                mst_lessons[]
 
   @@unique([course_id, chapter_code])
@@ -680,6 +748,8 @@ model mst_lessons {
   cnt_questions              cnt_questions[]
   cnt_videos                 cnt_videos[]
   lrn_subject_lesson_progress lrn_subject_lesson_progress[]
+  lrn_lesson_assignments     lrn_lesson_assignments?      @relation("lesson_assignments_lesson")
+  lrn_assignment_submissions lrn_assignment_submissions[] @relation("assignment_submissions_lesson")
   mst_chapters               mst_chapters     @relation(fields: [chapter_id], references: [chapter_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lessons_chapter")
 
   @@unique([chapter_id, lesson_code])
@@ -745,6 +815,8 @@ model mst_courses {
   cnt_questions            cnt_questions[]
   cnt_videos               cnt_videos[]
   lrn_subject_lesson_progress lrn_subject_lesson_progress[]
+  lrn_lesson_assignments   lrn_lesson_assignments[]     @relation("lesson_assignments_course")
+  lrn_assignment_submissions lrn_assignment_submissions[] @relation("assignment_submissions_course")
   mst_chapters             mst_chapters[]
   mst_users                mst_users?                @relation(fields: [creator_id], references: [user_id], onUpdate: NoAction, map: "fk_subjects_creator")
   mst_package_courses      mst_package_courses[]
@@ -853,6 +925,7 @@ model mst_users {
   lrn_flashcard_sessions                                                 lrn_flashcard_sessions[]
   lrn_learning_streaks                                                   lrn_learning_streaks?
   lrn_subject_lesson_progress                                            lrn_subject_lesson_progress[]
+  lrn_assignment_submissions                                             lrn_assignment_submissions[] @relation("assignment_submissions_user")
   lrn_practice_tests                                                     lrn_practice_tests[]
   lrn_quiz_answers                                                       lrn_quiz_answers[]
   lrn_quiz_attempts                                                      lrn_quiz_attempts[]
